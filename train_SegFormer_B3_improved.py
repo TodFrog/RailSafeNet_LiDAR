@@ -11,6 +11,7 @@ import wandb
 from tqdm import tqdm
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import argparse
 
 
 # Dataset paths
@@ -104,14 +105,15 @@ def calculate_rail_iou(pred_mask, true_mask, rail_classes=[3, 12, 17, 18]):
     
     return np.mean(rail_ious) if rail_ious else 0.0
 
-def train_segformer_b3_improved():
+def train_segformer_b3_improved(config):
     """SegFormer B3 개선된 훈련 (WandB Sweep 연동)"""
     
     # 1. WandB 초기화 (sweep이 여기서 config를 주입합니다)
-    wandb.init()
-    
-    # 2. 하드코딩된 config 대신 wandb.config 사용
-    config = wandb.config
+    wandb.init(
+        project="RailSafeNet-SegFormer-B3-Final", # 새 프로젝트 이름 지정
+        name=f"final-lr{config['learning_rate']:.1e}-wd{config['weight_decay']:.3f}", # 실행 이름 지정
+        config=config # 3. 전달받은 config 사용
+    )
     
     print(f"🚀 SegFormer B3 Training with Sweep")
     print(f"📊 Config from WandB: {config}")
@@ -134,29 +136,29 @@ def train_segformer_b3_improved():
     ).to(device)
     
     # 3. Optimizer 선택 로직 추가
-    if config.optimizer == 'adamw':
+    if config['optimizer'] == 'adamw':
         optimizer = torch.optim.AdamW(
             model.parameters(), 
-            lr=config.learning_rate, 
-            weight_decay=config.weight_decay
+            lr=config['learning_rate'], 
+            weight_decay=config['weight_decay']
         )
-    elif config.optimizer == 'adam':
+    elif config['optimizer'] == 'adam':
         optimizer = torch.optim.Adam(
             model.parameters(), 
-            lr=config.learning_rate, 
-            weight_decay=config.weight_decay
+            lr=config['learning_rate'], 
+            weight_decay=config['weight_decay']
         )
     else:
         raise ValueError(f"Unsupported optimizer: {config.optimizer}")
 
-    print(f"⚙️ Optimizer: {config.optimizer}, LR: {config.learning_rate}, WD: {config.weight_decay}")
+    print(f"⚙️ Optimizer: {config['optimizer']}, LR: {config['learning_rate']}, WD: {config['weight_decay']}")
 
     # Learning rate scheduler
     # 참고: 데이터셋 크기에 따라 total_steps, warmup_steps를 config 값으로 조정하는 것이 더 정확합니다.
     # 여기서는 기존 로직을 유지합니다.
     num_train_samples = 6800 
-    total_steps = config.epochs * (num_train_samples // config.batch_size)
-    warmup_steps = config.warmup_epochs * (num_train_samples // config.batch_size)
+    total_steps = config['epochs'] * (num_train_samples // config['batch_size'])
+    warmup_steps = config['warmup_epochs'] * (num_train_samples // config['batch_size'])
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=total_steps//4, T_mult=1
@@ -179,7 +181,7 @@ def train_segformer_b3_improved():
                 print("🔍 Validation phase...")
             
             # Create dataset
-            dataset = SimpleDataset(PATH_JPGS, PATH_MASKS, config.image_size, phase)
+            dataset = SimpleDataset(PATH_JPGS, PATH_MASKS, config['image_size'], phase)
             dataloader = DataLoader(
                 dataset, 
                 batch_size=config['batch_size'], 
@@ -274,9 +276,9 @@ def train_segformer_b3_improved():
         print(f"✅ Epoch {epoch+1} completed!")
         
         # Early stopping if target achieved
-        if best_rail_iou >= 0.6:
-            print(f"🎯 Target Rail IoU ≥ 0.6 achieved! Stopping early.")
-            break
+        #if best_rail_iou >= 0.6:
+        #    print(f"🎯 Target Rail IoU ≥ 0.6 achieved! Stopping early.")
+        #    break
     
     wandb.finish()
     print(f"\n🎉 SegFormer B3 Improved Training Completed!")
@@ -285,6 +287,23 @@ def train_segformer_b3_improved():
     return best_rail_iou
 
 if __name__ == "__main__":
+    # 4. Argument Parser 설정 추가
+    parser = argparse.ArgumentParser(description="Train SegFormer B3 with best hyperparameters.")
+    
+    # 최적 하이퍼파라미터들을 인자로 추가
+    parser.add_argument('--learning_rate', type=float, default=7.086e-5, help='Learning rate')
+    parser.add_argument('--weight_decay', type=float, default=0.007, help='Weight decay')
+    parser.add_argument('--optimizer', type=str, default='adamw', help='Optimizer (adamw or adam)')
+    parser.add_argument('--warmup_epochs', type=int, default=4, help='Warmup epochs')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
+    parser.add_argument('--epochs', type=int, default=30, help='Total epochs')
+    parser.add_argument('--image_size', type=int, default=512, help='Image size')
+
+    args = parser.parse_args()
+    
+    # args를 딕셔너리로 변환
+    config = vars(args)
+
     print("=" * 80)
     print("🚂 RailSafeNet SegFormer B3 Improved Training")
     print("=" * 80)
@@ -297,7 +316,7 @@ if __name__ == "__main__":
         exit(1)
     
     try:
-        best_score = train_segformer_b3_improved()
+        best_score = train_segformer_b3_improved(config)
         
         if best_score is not None:
             print(f"\n🎯 Final Results:")
