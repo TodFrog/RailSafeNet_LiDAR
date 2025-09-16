@@ -1,0 +1,83 @@
+program: train_SegFormer_transfer_production.py
+method: bayes
+metric:
+  goal: maximize
+  name: val_iou
+parameters:
+  batch_size:
+    values: [2, 4, 6, 8]
+  image_size:
+    values: [384, 512, 640]
+  lr_backbone:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 1e-4
+  lr_decoder:
+    distribution: log_uniform_values  
+    min: 1e-5
+    max: 1e-3
+  weight_decay:
+    distribution: log_uniform_values
+    min: 1e-5
+    max: 1e-3
+  augment:
+    values: [true, false]
+  num_epochs:
+    value: 20
+  max_samples:
+    values: [2000, 4000, null]  # null means use all data
+  num_workers:
+    values: [1, 2, 4]
+  use_wandb:
+    value: true
+
+# Early termination
+early_terminate:
+  type: hyperband
+  min_iter: 5
+  eta: 3
+
+# Sweep configuration
+project: RailSafeNet-TransferLearning-Production
+description: |
+  Hyperparameter optimization for SegFormer B3 transfer learning
+  
+  Goals:
+  - Maximize validation IoU (target > 0.80)
+  - Find optimal batch size and image size
+  - Optimize learning rates for backbone and decoder
+  - Test augmentation strategies
+  
+  Key Parameters:
+  - Transfer learning from high-performance original model
+  - 13-class segmentation
+  - Focus on rail detection performance
+  
+  Expected Results:
+  - IoU improvement over baseline (0.7424)
+  - Stable training without overfitting
+  - Production-ready model for TheDistanceAssessor.py
+
+# Resource limits (adjust based on your setup)
+command:
+  - ${env}
+  - python
+  - ${program}
+  - --batch_size
+  - ${batch_size}
+  - --image_size  
+  - ${image_size}
+  - --lr_backbone
+  - ${lr_backbone}
+  - --lr_decoder
+  - ${lr_decoder}
+  - --weight_decay
+  - ${weight_decay}
+  - --num_epochs
+  - ${num_epochs}
+  - --max_samples
+  - ${max_samples}
+  - --num_workers
+  - ${num_workers}
+  - ${if_augment}
+  - ${if_use_wandb}

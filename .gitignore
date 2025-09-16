@@ -29,3 +29,12 @@ __pycache__/
 *.vscode
 assets/crop
 run_sweep.sh
+assets/models_pretrained/segformer/segformer_b3_improved_best_0.7419.pth
+assets/models_pretrained/yolo/yolov8s.pt
+assets/models_pretrained/yolo/yolov8n.pt
+assets/models_pretrained/yolo/yolov8s.engine
+assets/models_pretrained/yolo/yolov8s.onnx
+investigate_railsem19_classes.py
+debug_segmentation.py
+analyze_original_model.py
+analyze_rail_classes.py
