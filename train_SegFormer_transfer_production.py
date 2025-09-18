@@ -349,14 +349,29 @@ def main():
     parser.add_argument('--batch_size', type=int, default=4, help='Batch size per GPU')
     parser.add_argument('--image_size', type=int, default=512, help='Input image size')
     parser.add_argument('--num_epochs', type=int, default=25, help='Number of training epochs')
-    parser.add_argument('--max_samples', type=int, default=None, help='Maximum number of samples (for testing)')
+    def parse_max_samples(value):
+        if value.lower() == 'null' or value.lower() == 'none':
+            return None
+        return int(value)
+    
+    parser.add_argument('--max_samples', type=parse_max_samples, default=None, help='Maximum number of samples (for testing)')
     parser.add_argument('--lr_backbone', type=float, default=1e-5, help='Learning rate for backbone')
     parser.add_argument('--lr_decoder', type=float, default=1e-4, help='Learning rate for decoder')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay')
-    parser.add_argument('--augment', action='store_true', help='Enable data augmentation')
+    def str2bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
+    
+    parser.add_argument('--augment', type=str2bool, default=False, help='Enable data augmentation')
     parser.add_argument('--num_workers', type=int, default=2, help='Number of data loading workers')
     parser.add_argument('--save_every', type=int, default=5, help='Save model every N epochs')
-    parser.add_argument('--use_wandb', action='store_true', help='Use Weights & Biases logging')
+    parser.add_argument('--use_wandb', type=str2bool, default=True, help='Use Weights & Biases logging')
     
     args = parser.parse_args()
     

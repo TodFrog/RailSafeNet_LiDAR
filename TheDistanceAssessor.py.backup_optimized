@@ -9,67 +9,85 @@ import matplotlib.path as mplPath
 import matplotlib.patches as patches
 from ultralyticsplus import YOLO
 
-# Import PyTorch model for debugging
-from production_segformer_pytorch import load_pytorch_model
-
-def load_model(model_path=None):
-    """Load the PyTorch SegFormer model"""
-    print("🚀 Loading PyTorch SegFormer model...")
-    model = load_pytorch_model()
-    print("✅ PyTorch model loaded successfully")
-    return model
+def load_model(model_path):
+    """Load the trained SegFormer model - supports both complete model and state_dict"""
+    import torch
+    from transformers import SegformerForSemanticSegmentation
+    
+    print(f"Loading SegFormer model from: {model_path}")
+    
+    try:
+        # Try loading as complete model first (original format)
+        model_data = torch.load(model_path, map_location='cpu')
+        
+        if hasattr(model_data, 'state_dict') and hasattr(model_data, 'config'):
+            # Original complete model
+            print("✅ Loading complete model directly")
+            model_data.eval()
+            return model_data
+        else:
+            # State dict only - create model first
+            print("✅ Loading state dict model")
+            model = SegformerForSemanticSegmentation.from_pretrained(
+                "nvidia/mit-b3", 
+                num_labels=13,  # Transfer learning uses 13 classes
+                ignore_mismatched_sizes=True
+            )
+            model.load_state_dict(model_data)
+            model.eval()
+            return model
+            
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        raise e
 
 def load(filename, PATH_jpgs, image_size, dataset_type, item=None):
     """Load and preprocess image for segmentation"""
     import cv2
     import numpy as np
     import torch
-
+    
     image_path = os.path.join(PATH_jpgs, filename)
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     original_image = image.copy()
-
+    
     # Resize to model input size
     image = cv2.resize(image, (image_size[0], image_size[1]))
-
+    
     # Normalize for SegFormer
     image_norm = image.astype(np.float32) / 255.0
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
-
+    
     for i in range(3):
         image_norm[:, :, i] = (image_norm[:, :, i] - mean[i]) / std[i]
-
+    
     # Convert to tensor
     image_norm = torch.from_numpy(image_norm).permute(2, 0, 1).unsqueeze(0)
-
+    
     return image_norm, None, original_image, None, None
 
 def process(model, image_norm, mask, model_type):
-    """Process image through optimized SegFormer model"""
+    """Process image through SegFormer model"""
     import torch
     import torch.nn.functional as F
-
-    start_time = time.time()
-
+    
     with torch.no_grad():
         outputs = model(image_norm)
         logits = outputs.logits
-
+        
         # Resize to target size (1080x1920 for full HD)
         logits = F.interpolate(
-            logits, size=(1080, 1920),
+            logits, size=(1080, 1920), 
             mode='bilinear', align_corners=False
         )
-
+        
         # Get predictions
         predictions = torch.argmax(logits, dim=1)
-
-    inference_time = time.time() - start_time
-    print(f"⚡ Optimized inference time: {inference_time:.3f}s")
-
+        
     return predictions.squeeze().cpu().numpy()
+
 
 
 PATH_jpgs = '/home/mmc-server4/Server/Datasets_hdd/rs19_val/jpgs/rs19_val'
@@ -626,65 +644,6 @@ def segment(model_seg, image_size, filename, PATH_jpgs, dataset_type, model_type
         image_norm, _, image, mask, _ = load(filename, PATH_jpgs, image_size, dataset_type=dataset_type, item=item)
         id_map = process(model_seg, image_norm, mask, model_type)
         id_map = cv2.resize(id_map, [1920,1080], interpolation=cv2.INTER_NEAREST)
-
-        # Debug: Analyze segmentation results
-        print(f"\n🔍 Segmentation Analysis for {filename}:")
-        unique_classes = np.unique(id_map)
-        print(f"📊 Detected classes: {unique_classes}")
-
-        # Count pixels for each class
-        total_pixels = id_map.size
-        for cls in unique_classes:
-            count = np.sum(id_map == cls)
-            percentage = (count / total_pixels) * 100
-            print(f"   Class {cls:2d}: {count:7d} pixels ({percentage:5.2f}%)")
-
-        # Check potential rail classes (common rail classes in different systems)
-        potential_rail_classes = [1, 2, 3, 4, 5, 9, 10, 12]
-        rail_detected = []
-        for rail_class in potential_rail_classes:
-            if rail_class in unique_classes:
-                count = np.sum(id_map == rail_class)
-                if count > 100:  # Only consider significant detections
-                    rail_detected.append(rail_class)
-
-        if rail_detected:
-            print(f"🚂 Potential rail classes detected: {rail_detected}")
-        else:
-            print("❌ No significant rail detections found")
-
-        # Save segmentation mask for comparison
-        model_name = "original" if hasattr(model_seg, 'model_path') and "SegFormer_B3_1024_finetuned" in model_seg.model_path else "trained"
-
-        # Create visualization of segmentation
-        import matplotlib.pyplot as plt
-        import matplotlib.colors as mcolors
-
-        # Create colormap for visualization
-        colors = plt.cm.tab20(np.linspace(0, 1, 20))
-        cmap = mcolors.ListedColormap(colors)
-
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-
-        # Original image
-        ax1.imshow(image)
-        ax1.set_title(f'Original Image: {filename}')
-        ax1.axis('off')
-
-        # Segmentation mask
-        im = ax2.imshow(id_map, cmap=cmap, vmin=0, vmax=19)
-        ax2.set_title(f'Segmentation ({model_name} model)')
-        ax2.axis('off')
-
-        # Add colorbar
-        plt.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
-
-        # Save segmentation comparison
-        seg_path = f'/home/mmc-server4/RailSafeNet/comparison_results/segmentation_{model_name}_{filename}.png'
-        plt.savefig(seg_path, format='png', bbox_inches='tight', dpi=150)
-        plt.close()
-        print(f'🎨 Segmentation saved to: {seg_path}')
-
         return id_map, image
 
 def detect(model_det, filename_img, PATH_jpgs):
@@ -964,14 +923,9 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
         
         plt.xlim(left=0)  # Ensure only positive X values are displayed
         plt.tight_layout()
-
-        # Save results for comparison
-        model_name = "original" if hasattr(model_seg, 'model_path') and "SegFormer_B3_1024_finetuned" in model_seg.model_path else "trained"
-        output_path = f'/home/mmc-server4/RailSafeNet/comparison_results/{model_name}_{filename_img}_{file_index:04d}.jpg'
-        plt.savefig(output_path, format='jpg', bbox_inches='tight', dpi=150)
-        print(f'✅ Result saved to: {output_path}')
-
-        plt.close()
+        plt.show()
+        #plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
+        #plt.close()
         print('Frame processed successfully.')
 
 def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type, model_type, target_distances, file_index, vis, item=None, num_ys = 15):
@@ -1001,7 +955,7 @@ if __name__ == "__main__":
         data_type = 'railsem19' #railsem19, pilsen or testdata
         model_type = "segformer" #segformer or deeplab
         vis = False
-        image_size = [512,512]
+        image_size = [1024,1024]
         target_distances = [650,1000,2000] #[600,1000,2000] [4000,5500,6500] [2000,3000,4000]
         num_ys = 10
         
@@ -1016,11 +970,10 @@ if __name__ == "__main__":
                 file_index = 0
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
-                filename_img = "rs07650.jpg"  # Test with just one image
-                run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
-                # for filename_img in os.listdir(PATH_jpgs):
-                #         run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
-                #         file_index += 1
+                for filename_img in os.listdir(PATH_jpgs):
+                        #filename_img = "rs07650.jpg"
+                        run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
+                        file_index += 1
         else:
                 file_index = 0
                 PATH_jpgs = 'Grafika/Video_export/frames'

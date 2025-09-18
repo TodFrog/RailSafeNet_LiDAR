@@ -25,47 +25,58 @@ import argparse
 from pathlib import Path
 from torch.cuda.amp import GradScaler, autocast
 
-# Configuration
-class TransferLearningConfig:
-    def __init__(self):
-        # Model settings
-        self.model_name = "nvidia/mit-b3"
-        self.original_model_path = "/home/mmc-server4/RailSafeNet_mini_DT/assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth"
-        
-        # Dataset paths
-        self.train_images_path = "/home/mmc-server4/Server/Datasets_hdd/rs19_val/jpgs/rs19_val"
-        self.train_masks_path = "/home/mmc-server4/Server/Datasets_hdd/rs19_val/uint8/rs19_val"
-        
-        # Training settings
-        self.num_epochs = 30
-        self.batch_size = 4  # Per GPU (reduced for memory)
-        self.num_workers = 2
-        self.image_size = 512  # Reduced from 1024 to prevent OOM
-        
-        # Learning rates (differential)
-        self.lr_backbone = 1e-5    # Very low for pretrained features
-        self.lr_decoder = 1e-4     # Moderate for adaptation
-        self.lr_new_layers = 1e-3  # High for random initialization
-        self.weight_decay = 1e-4
-        
-        # Training phases
-        self.freeze_epochs = 5     # Epochs to keep backbone frozen
-        self.warmup_epochs = 3     # Epochs for learning rate warmup
-        
-        # Model saving
-        self.save_dir = "/home/mmc-server4/RailSafeNet/models"
-        self.save_every_n_epochs = 5
-        
-        # WandB settings
-        self.project_name = "RailSafeNet-TransferLearning"
-        self.experiment_name = "SegFormer_B3_Transfer_v1"
-        
-        # Class settings - Critical decision point
-        self.use_original_classes = True  # True: 13 classes, False: 19 classes
-        self.num_classes = 13 if self.use_original_classes else 19
-        
-        # Rail classes for focused evaluation
-        self.rail_classes = [1, 5, 9, 10, 12] if not self.use_original_classes else list(range(1, 6))
+def parse_args():
+    """Parse command line arguments for transfer learning"""
+    parser = argparse.ArgumentParser(description='Transfer Learning Training for SegFormer B3')
+
+    # Model settings
+    parser.add_argument('--model-name', type=str, default='nvidia/mit-b3', help='Model name')
+    parser.add_argument('--original-model-path', type=str,
+                       default='/home/mmc-server4/RailSafeNet_mini_DT/assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth',
+                       help='Path to original pretrained model')
+
+    # Dataset paths
+    parser.add_argument('--train-images-path', type=str,
+                       default='/home/mmc-server4/Server/Datasets_hdd/rs19_val/jpgs/rs19_val',
+                       help='Path to training images')
+    parser.add_argument('--train-masks-path', type=str,
+                       default='/home/mmc-server4/Server/Datasets_hdd/rs19_val/uint8/rs19_val',
+                       help='Path to training masks')
+
+    # Training settings
+    parser.add_argument('--num-epochs', '--num_epochs', type=int, default=30, help='Number of training epochs')
+    parser.add_argument('--batch-size', '--batch_size', type=int, default=4, help='Batch size per GPU')
+    parser.add_argument('--num-workers', '--num_workers', type=int, default=8, help='Number of data loader workers')
+    parser.add_argument('--image-size', '--image_size', type=int, default=768, help='Input image size')
+
+    # Learning rates
+    parser.add_argument('--lr-backbone', '--lr_backbone', type=float, default=1e-5, help='Learning rate for backbone')
+    parser.add_argument('--lr-decoder', '--lr_decoder', type=float, default=1e-4, help='Learning rate for decoder')
+    parser.add_argument('--lr-new-layers', '--lr_new_layers', type=float, default=1e-3, help='Learning rate for new layers')
+    parser.add_argument('--weight-decay', '--weight_decay', type=float, default=1e-4, help='Weight decay')
+
+    # Training phases
+    parser.add_argument('--freeze-epochs', '--freeze_epochs', type=int, default=5, help='Epochs to keep backbone frozen')
+    parser.add_argument('--warmup-epochs', type=int, default=3, help='Epochs for learning rate warmup')
+
+    # Model saving
+    parser.add_argument('--save-dir', type=str, default='/home/mmc-server4/RailSafeNet/models',
+                       help='Directory to save models')
+    parser.add_argument('--save-every-n-epochs', type=int, default=5, help='Save checkpoint every N epochs')
+
+    # WandB settings
+    parser.add_argument('--project-name', type=str, default='RailSafeNet-TransferLearning',
+                       help='WandB project name')
+    parser.add_argument('--experiment-name', type=str, default='SegFormer_B3_Transfer_v1',
+                       help='WandB experiment name')
+    parser.add_argument('--use-wandb', action='store_true', default=True, help='Use Weights & Biases logging')
+
+    # Class settings
+    parser.add_argument('--use-original-classes', action='store_true', default=True,
+                       help='Use original 13 classes instead of 19')
+    parser.add_argument('--num-classes', type=int, default=13, help='Number of classes')
+
+    return parser.parse_args()
 
 class RailDataset(Dataset):
     """Custom dataset for railway semantic segmentation"""
@@ -116,8 +127,36 @@ class RailDataset(Dataset):
         # Handle class mapping if using original 13-class system
         if self.num_classes == 13:
             # Map RailSem19 classes to original model classes
-            # This is a simplified mapping - would need proper analysis
-            mask = torch.clamp(mask, 0, 12)
+            # Based on original model analysis
+            class_mapping = {
+                # Rails mapping - most important
+                3: 4,    # wall -> main rail track
+                12: 9,   # rider -> secondary rail track
+                17: 4,   # motorcycle -> main rail track
+                18: 9,   # bicycle -> secondary rail track
+
+                # Infrastructure
+                0: 1,    # road -> rail road/platform
+                1: 1,    # sidewalk -> rail road/platform
+                9: 1,    # terrain -> rail road/platform
+
+                # Environment
+                8: 6,    # vegetation -> vegetation/sky
+                10: 6,   # sky -> vegetation/sky
+
+                # Objects/Background
+                2: 12, 4: 12, 5: 12, 6: 12, 7: 12, 11: 12,
+                13: 12, 14: 12, 15: 12, 16: 12,  # all -> background
+            }
+
+            # Apply mapping
+            mapped_mask = torch.full_like(mask, 255, dtype=torch.long)
+            for src_class, tgt_class in class_mapping.items():
+                mapped_mask[mask == src_class] = tgt_class
+
+            # Set unmapped classes to background
+            mapped_mask[mapped_mask == 255] = 12
+            mask = mapped_mask
         
         return image, mask
 
@@ -161,66 +200,76 @@ def load_original_model(model_path, num_classes):
     
     return new_model, original_model.config
 
-def create_optimizer(model, config):
+def create_optimizer(model, args):
     """Create optimizer with differential learning rates"""
-    
+
     # Group parameters by component
     backbone_params = []
     decoder_params = []
     new_params = []
-    
+
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-            
+
         if 'segformer.encoder' in name:
             backbone_params.append(param)
         elif 'decode_head' in name:
             decoder_params.append(param)
         else:
             new_params.append(param)
-    
+
     # Create parameter groups with different learning rates
     param_groups = [
-        {'params': backbone_params, 'lr': config.lr_backbone, 'name': 'backbone'},
-        {'params': decoder_params, 'lr': config.lr_decoder, 'name': 'decoder'},
-        {'params': new_params, 'lr': config.lr_new_layers, 'name': 'new_layers'}
+        {'params': backbone_params, 'lr': args.lr_backbone, 'name': 'backbone'},
+        {'params': decoder_params, 'lr': args.lr_decoder, 'name': 'decoder'},
+        {'params': new_params, 'lr': args.lr_new_layers, 'name': 'new_layers'}
     ]
-    
-    optimizer = optim.AdamW(param_groups, weight_decay=config.weight_decay)
-    
+
+    optimizer = optim.AdamW(param_groups, weight_decay=args.weight_decay)
+
     print(f"Optimizer groups:")
-    print(f"  - Backbone: {len(backbone_params)} params, lr={config.lr_backbone}")
-    print(f"  - Decoder: {len(decoder_params)} params, lr={config.lr_decoder}")
-    print(f"  - New layers: {len(new_params)} params, lr={config.lr_new_layers}")
-    
+    print(f"  - Backbone: {len(backbone_params)} params, lr={args.lr_backbone}")
+    print(f"  - Decoder: {len(decoder_params)} params, lr={args.lr_decoder}")
+    print(f"  - New layers: {len(new_params)} params, lr={args.lr_new_layers}")
+
     return optimizer
 
-def create_loss_function(config):
-    """Create combined loss function"""
-    
-    # Cross entropy loss
+def create_loss_function(args):
+    """Create combined loss function with rail class focus"""
+
+    # Create class weights - higher weight for rail classes
+    class_weights = torch.ones(args.num_classes)
+
+    # Give higher weights to rail classes
+    if hasattr(args, 'rail_classes'):
+        for rail_class in args.rail_classes:
+            if rail_class < args.num_classes:
+                class_weights[rail_class] = 3.0  # 3x weight for rail classes
+
+    # Cross entropy loss with class weights (will be moved to device in combined_loss)
     ce_loss = nn.CrossEntropyLoss(ignore_index=255)
     
     def combined_loss(outputs, targets):
         # Resize outputs to match targets
         outputs = F.interpolate(outputs, size=targets.shape[-2:], mode='bilinear', align_corners=False)
         
-        # Cross entropy loss
-        ce = ce_loss(outputs, targets)
+        # Cross entropy loss with class weights
+        device_class_weights = class_weights.to(outputs.device)
+        ce = F.cross_entropy(outputs, targets, weight=device_class_weights, ignore_index=255)
         
         # Dice loss for rail classes (optional)
         dice_loss = 0.0
-        if hasattr(config, 'rail_classes') and config.rail_classes:
+        if hasattr(args, 'rail_classes') and args.rail_classes:
             probs = F.softmax(outputs, dim=1)
-            for cls in config.rail_classes:
+            for cls in args.rail_classes:
                 if cls < outputs.shape[1]:  # Ensure class exists
                     pred_mask = probs[:, cls]
                     true_mask = (targets == cls).float()
                     intersection = (pred_mask * true_mask).sum()
                     dice = (2. * intersection) / (pred_mask.sum() + true_mask.sum() + 1e-8)
                     dice_loss += (1 - dice)
-            dice_loss /= len(config.rail_classes)
+            dice_loss /= len(args.rail_classes)
         
         # Combined loss
         total_loss = ce + 0.3 * dice_loss
@@ -228,15 +277,15 @@ def create_loss_function(config):
     
     return combined_loss
 
-def calculate_metrics(outputs, targets, num_classes):
-    """Calculate IoU and other metrics"""
+def calculate_metrics(outputs, targets, num_classes, rail_classes=None):
+    """Calculate IoU and other metrics including rail-specific metrics"""
     outputs = F.interpolate(outputs, size=targets.shape[-2:], mode='bilinear', align_corners=False)
     preds = torch.argmax(outputs, dim=1)
-    
+
     # Convert to numpy for sklearn metrics
     preds_np = preds.cpu().numpy().flatten()
     targets_np = targets.cpu().numpy().flatten()
-    
+
     # Calculate IoU per class
     iou_per_class = []
     for cls in range(num_classes):
@@ -245,10 +294,19 @@ def calculate_metrics(outputs, targets, num_classes):
             iou_per_class.append(iou)
         else:
             iou_per_class.append(0.0)
-    
+
     mean_iou = np.mean(iou_per_class)
-    
-    return mean_iou, iou_per_class
+
+    # Calculate rail-specific metrics
+    rail_iou = 0.0
+    rail_ious = []
+    if rail_classes:
+        for rail_cls in rail_classes:
+            if rail_cls < len(iou_per_class):
+                rail_ious.append(iou_per_class[rail_cls])
+        rail_iou = np.mean(rail_ious) if rail_ious else 0.0
+
+    return mean_iou, iou_per_class, rail_iou, rail_ious
 
 def freeze_backbone(model):
     """Freeze backbone parameters"""
@@ -267,13 +325,14 @@ def unfreeze_backbone(model):
 def train_epoch(model, dataloader, optimizer, loss_fn, device, config, epoch, scaler=None):
     """Train for one epoch with mixed precision"""
     model.train()
-    
+
     total_loss = 0
     total_ce_loss = 0
     total_dice_loss = 0
     total_iou = 0
+    total_rail_iou = 0
     num_batches = len(dataloader)
-    
+
     pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{config.num_epochs}")
     
     for batch_idx, (images, masks) in enumerate(pbar):
@@ -306,25 +365,28 @@ def train_epoch(model, dataloader, optimizer, loss_fn, device, config, epoch, sc
         
         # Calculate metrics
         with torch.no_grad():
-            mean_iou, _ = calculate_metrics(logits, masks, config.num_classes)
+            mean_iou, _, rail_iou, _ = calculate_metrics(logits, masks, config.num_classes, config.rail_classes)
         
         # Update running averages
         total_loss += loss.item()
         total_ce_loss += ce_loss.item()
         total_dice_loss += dice_loss
         total_iou += mean_iou
+        total_rail_iou += rail_iou
         
         # Update progress bar
         pbar.set_postfix({
             'Loss': f'{loss.item():.4f}',
-            'IoU': f'{mean_iou:.4f}'
+            'IoU': f'{mean_iou:.4f}',
+            'Rail_IoU': f'{rail_iou:.4f}'
         })
         
         # Log to wandb
-        if batch_idx % 50 == 0:
+        if batch_idx % 50 == 0 and config.use_wandb:
             wandb.log({
                 'batch_loss': loss.item(),
                 'batch_iou': mean_iou,
+                'batch_rail_iou': rail_iou,
                 'epoch': epoch,
                 'batch': batch_idx
             })
@@ -334,16 +396,19 @@ def train_epoch(model, dataloader, optimizer, loss_fn, device, config, epoch, sc
     avg_ce_loss = total_ce_loss / num_batches
     avg_dice_loss = total_dice_loss / num_batches
     avg_iou = total_iou / num_batches
-    
-    return avg_loss, avg_ce_loss, avg_dice_loss, avg_iou
+    avg_rail_iou = total_rail_iou / num_batches
+
+    return avg_loss, avg_ce_loss, avg_dice_loss, avg_iou, avg_rail_iou
 
 def validate_epoch(model, dataloader, loss_fn, device, config):
     """Validate for one epoch"""
     model.eval()
-    
+
     total_loss = 0
     total_iou = 0
+    total_rail_iou = 0
     all_class_ious = []
+    all_rail_ious = []
     num_batches = len(dataloader)
     
     with torch.no_grad():
@@ -361,35 +426,39 @@ def validate_epoch(model, dataloader, loss_fn, device, config):
             loss, _, _ = loss_fn(logits, masks)
             
             # Calculate metrics
-            mean_iou, class_ious = calculate_metrics(logits, masks, config.num_classes)
+            mean_iou, class_ious, rail_iou, rail_ious = calculate_metrics(logits, masks, config.num_classes, config.rail_classes)
             
             total_loss += loss.item()
             total_iou += mean_iou
+            total_rail_iou += rail_iou
             all_class_ious.append(class_ious)
-            
+            all_rail_ious.append(rail_ious)
+
             pbar.set_postfix({
                 'Val Loss': f'{loss.item():.4f}',
-                'Val IoU': f'{mean_iou:.4f}'
+                'Val IoU': f'{mean_iou:.4f}',
+                'Val Rail IoU': f'{rail_iou:.4f}'
             })
     
     # Calculate averages
     avg_loss = total_loss / num_batches
     avg_iou = total_iou / num_batches
-    
+    avg_rail_iou = total_rail_iou / num_batches
+
     # Calculate average class IoUs
     avg_class_ious = np.mean(all_class_ious, axis=0)
-    
-    return avg_loss, avg_iou, avg_class_ious
+
+    return avg_loss, avg_iou, avg_rail_iou, avg_class_ious
 
 def main():
     # Parse arguments
-    parser = argparse.ArgumentParser(description='Transfer Learning Training for SegFormer B3')
-    parser.add_argument('--config', type=str, help='Path to config file (optional)')
-    parser.add_argument('--use-wandb', action='store_true', help='Use Weights & Biases logging')
-    args = parser.parse_args()
-    
-    # Initialize configuration
-    config = TransferLearningConfig()
+    args = parse_args()
+
+    # Set rail classes based on number of classes
+    if args.use_original_classes:
+        args.rail_classes = [1, 4, 9]  # platform, main track, secondary track
+    else:
+        args.rail_classes = list(range(1, 6))
     
     # Set up device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -402,18 +471,28 @@ def main():
     
     # Initialize wandb if requested
     if args.use_wandb:
-        wandb.init(
-            project=config.project_name,
-            name=config.experiment_name,
-            config=vars(config)
-        )
+        # Check if running as part of sweep
+        if wandb.run is None:
+            wandb.init(
+                project=args.project_name,
+                name=args.experiment_name,
+                config=vars(args)
+            )
+        else:
+            # Running as part of sweep - update args with sweep config
+            config = wandb.config
+            for key, value in config.items():
+                # WandB config keys should already use underscores
+                if hasattr(args, key):
+                    setattr(args, key, value)
+                    print(f"Updated {key} = {value} from sweep config")
     
     # Create save directory
-    os.makedirs(config.save_dir, exist_ok=True)
+    os.makedirs(args.save_dir, exist_ok=True)
     
     # Load model
     print("🚀 Loading original model for transfer learning...")
-    model, original_config = load_original_model(config.original_model_path, config.num_classes)
+    model, original_config = load_original_model(args.original_model_path, args.num_classes)
     model = model.to(device)
     
     # Multi-GPU setup with memory management
@@ -431,10 +510,10 @@ def main():
     
     # For now, use the same data for train/val (would normally split)
     train_dataset = RailDataset(
-        config.train_images_path,
-        config.train_masks_path,
-        config.image_size,
-        config.num_classes
+        args.train_images_path,
+        args.train_masks_path,
+        args.image_size,
+        args.num_classes
     )
     
     # Simple train/val split (80/20)
@@ -445,17 +524,17 @@ def main():
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config.batch_size,
+        batch_size=args.batch_size,
         shuffle=True,
-        num_workers=config.num_workers,
+        num_workers=args.num_workers,
         pin_memory=True
     )
     
     val_loader = DataLoader(
         val_dataset,
-        batch_size=config.batch_size,
+        batch_size=args.batch_size,
         shuffle=False,
-        num_workers=config.num_workers,
+        num_workers=args.num_workers,
         pin_memory=True
     )
     
@@ -463,11 +542,11 @@ def main():
     print(f"Validation samples: {len(val_dataset)}")
     
     # Create optimizer and loss function
-    optimizer = create_optimizer(model, config)
-    loss_fn = create_loss_function(config)
+    optimizer = create_optimizer(model, args)
+    loss_fn = create_loss_function(args)
     
     # Learning rate scheduler
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.num_epochs)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs)
     
     # Training loop
     print("🏋️ Starting training...")
@@ -478,28 +557,28 @@ def main():
     train_ious = []
     val_ious = []
     
-    for epoch in range(config.num_epochs):
+    for epoch in range(args.num_epochs):
         print(f"\\n{'='*60}")
-        print(f"Epoch {epoch+1}/{config.num_epochs}")
+        print(f"Epoch {epoch+1}/{args.num_epochs}")
         print(f"{'='*60}")
         
         # Freeze/unfreeze backbone based on epoch
         if epoch == 0:
             freeze_backbone(model)
-        elif epoch == config.freeze_epochs:
+        elif epoch == args.freeze_epochs:
             unfreeze_backbone(model)
             # Recreate optimizer with new parameter requirements
-            optimizer = create_optimizer(model, config)
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.num_epochs-epoch)
-        
+            optimizer = create_optimizer(model, args)
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_epochs-epoch)
+
         # Train
-        train_loss, train_ce_loss, train_dice_loss, train_iou = train_epoch(
-            model, train_loader, optimizer, loss_fn, device, config, epoch, scaler
+        train_loss, train_ce_loss, train_dice_loss, train_iou, train_rail_iou = train_epoch(
+            model, train_loader, optimizer, loss_fn, device, args, epoch, scaler
         )
-        
+
         # Validate
-        val_loss, val_iou, val_class_ious = validate_epoch(
-            model, val_loader, loss_fn, device, config
+        val_loss, val_iou, val_rail_iou, val_class_ious = validate_epoch(
+            model, val_loader, loss_fn, device, args
         )
         
         # Update scheduler
@@ -515,12 +594,14 @@ def main():
         print(f"\\nEpoch {epoch+1} Results:")
         print(f"  Train Loss: {train_loss:.4f} (CE: {train_ce_loss:.4f}, Dice: {train_dice_loss:.4f})")
         print(f"  Train IoU:  {train_iou:.4f}")
+        print(f"  Train Rail IoU: {train_rail_iou:.4f}")
         print(f"  Val Loss:   {val_loss:.4f}")
         print(f"  Val IoU:    {val_iou:.4f}")
+        print(f"  Val Rail IoU: {val_rail_iou:.4f}")
         
         # Print rail class IoUs
         if len(val_class_ious) > 0:
-            rail_ious = [val_class_ious[cls] for cls in config.rail_classes if cls < len(val_class_ious)]
+            rail_ious = [val_class_ious[cls] for cls in args.rail_classes if cls < len(val_class_ious)]
             if rail_ious:
                 print(f"  Rail IoUs:  {[f'{iou:.3f}' for iou in rail_ious]}")
         
@@ -530,8 +611,10 @@ def main():
                 'epoch': epoch + 1,
                 'train_loss': train_loss,
                 'train_iou': train_iou,
+                'train_rail_iou': train_rail_iou,
                 'val_loss': val_loss,
                 'val_iou': val_iou,
+                'val_rail_iou': val_rail_iou,
                 'learning_rate': optimizer.param_groups[0]['lr']
             }
             
@@ -541,10 +624,10 @@ def main():
             
             wandb.log(log_dict)
         
-        # Save model if best
-        if val_iou > best_iou:
-            best_iou = val_iou
-            save_path = os.path.join(config.save_dir, f'segformer_b3_transfer_best_{val_iou:.4f}.pth')
+        # Save model if best rail IoU
+        if val_rail_iou > best_iou:
+            best_iou = val_rail_iou
+            save_path = os.path.join(args.save_dir, f'segformer_b3_transfer_best_rail_{val_rail_iou:.4f}.pth')
             
             # Save state dict only (for compatibility)
             if isinstance(model, nn.DataParallel):
@@ -555,8 +638,8 @@ def main():
             print(f"💾 Saved best model: {save_path}")
         
         # Save checkpoint every N epochs
-        if (epoch + 1) % config.save_every_n_epochs == 0:
-            checkpoint_path = os.path.join(config.save_dir, f'segformer_b3_transfer_epoch_{epoch+1}.pth')
+        if (epoch + 1) % args.save_every_n_epochs == 0:
+            checkpoint_path = os.path.join(args.save_dir, f'segformer_b3_transfer_epoch_{epoch+1}.pth')
             if isinstance(model, nn.DataParallel):
                 torch.save(model.module.state_dict(), checkpoint_path)
             else:
@@ -564,10 +647,10 @@ def main():
             print(f"💾 Saved checkpoint: {checkpoint_path}")
     
     print(f"\\n🎉 Training completed!")
-    print(f"Best validation IoU: {best_iou:.4f}")
+    print(f"Best validation Rail IoU: {best_iou:.4f}")
     
     # Final model save
-    final_path = os.path.join(config.save_dir, 'segformer_b3_transfer_final.pth')
+    final_path = os.path.join(args.save_dir, 'segformer_b3_transfer_final.pth')
     if isinstance(model, nn.DataParallel):
         torch.save(model.module.state_dict(), final_path)
     else:
@@ -596,7 +679,7 @@ def main():
     plt.grid(True)
     
     plt.tight_layout()
-    plt.savefig(os.path.join(config.save_dir, 'transfer_learning_curves.png'))
+    plt.savefig(os.path.join(args.save_dir, 'transfer_learning_curves.png'))
     print(f"📊 Saved training curves")
     
     if args.use_wandb:

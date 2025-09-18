@@ -1,0 +1,38 @@
+program: train_SegFormer_transfer_production.py
+project: RailSafeNet-TransferLearning-OPTIMIZED
+method: bayes
+metric:
+  name: val_iou
+  goal: maximize
+
+parameters:
+  # OPTIMIZED hyperparameters for speed
+  batch_size:
+    values: [16, 20, 24]  # INCREASED batch sizes
+  image_size:
+    values: [512, 640]    # REDUCED image sizes for speed
+  num_epochs:
+    values: [15, 20, 25]  # REDUCED epochs for faster testing
+
+  # Learning rates - simplified ranges
+  lr_backbone:
+    values: [1e-6, 5e-6, 1e-5, 5e-5]
+  lr_decoder:
+    values: [1e-5, 5e-5, 1e-4, 5e-4]
+
+  # Regularization
+  weight_decay:
+    values: [1e-5, 1e-4, 1e-3]
+
+  # Data loading optimization
+  num_workers:
+    values: [8, 12, 16]   # INCREASED workers
+
+  # Augmentation options
+  augment:
+    values: [false, true]
+
+# Early termination for efficiency
+early_terminate:
+  type: hyperband
+  min_iter: 5

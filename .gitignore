@@ -38,3 +38,6 @@ investigate_railsem19_classes.py
 debug_segmentation.py
 analyze_original_model.py
 analyze_rail_classes.py
+comparison_results/
+evaluation_results/
+
