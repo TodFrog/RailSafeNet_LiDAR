@@ -73,7 +73,7 @@ def process(model, image_norm, mask, model_type):
 
 
 PATH_jpgs = '/home/mmc-server4/Server/Datasets_hdd/rs19_val/jpgs/rs19_val'
-PATH_model_seg = '/home/mmc-server4/RailSafeNet/models/segformer_b3_transfer_best_0.6249.pth'
+PATH_model_seg = '/home/mmc-server4/RailSafeNet/models/segformer_b3_production_optimized_rail_0.7500.pth'
 PATH_model_det = '/home/mmc-server4/RailSafeNet_mini_DT/assets/models_pretrained/yolo/yolov8s.pt'
 PATH_base = '/home/mmc-server4/RailSafeNet_mini_DT/assets/pilsen_railway_dataset/'
 eda_path = "/home/mmc-server4/RailSafeNet_mini_DT/assets/pilsen_railway_dataset/eda_table.table.json"
@@ -680,7 +680,7 @@ def segment(model_seg, image_size, filename, PATH_jpgs, dataset_type, model_type
         plt.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
 
         # Save segmentation comparison
-        seg_path = f'/home/mmc-server4/RailSafeNet/comparison_results/segmentation_{model_name}_{filename}.png'
+        seg_path = f'/home/mmc-server4/RailSafeNet/evaluation_results/segmentation_{model_name}_{filename}.png'
         plt.savefig(seg_path, format='png', bbox_inches='tight', dpi=150)
         plt.close()
         print(f'🎨 Segmentation saved to: {seg_path}')
@@ -965,9 +965,9 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
         plt.xlim(left=0)  # Ensure only positive X values are displayed
         plt.tight_layout()
 
-        # Save results for comparison
-        model_name = "original" if hasattr(model_seg, 'model_path') and "SegFormer_B3_1024_finetuned" in model_seg.model_path else "trained"
-        output_path = f'/home/mmc-server4/RailSafeNet/comparison_results/{model_name}_{filename_img}_{file_index:04d}.jpg'
+        # Save results for evaluation
+        model_name = "optimized_rail75" if "production_optimized_rail_0.7500" in model_seg.model_path else "baseline"
+        output_path = f'/home/mmc-server4/RailSafeNet/evaluation_results/{model_name}_{filename_img}_{file_index:04d}.jpg'
         plt.savefig(output_path, format='jpg', bbox_inches='tight', dpi=150)
         print(f'✅ Result saved to: {output_path}')
 
@@ -1016,11 +1016,24 @@ if __name__ == "__main__":
                 file_index = 0
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
-                filename_img = "rs07650.jpg"  # Test with just one image
-                run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
-                # for filename_img in os.listdir(PATH_jpgs):
-                #         run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
-                #         file_index += 1
+
+                # Test with specific images for comprehensive evaluation
+                test_images = ["rs03918.jpg", "rs07798.jpg", "rs01997.jpg", "rs04775.jpg", "rs00653.jpg"]
+
+                print(f"🚀 Starting comprehensive evaluation with optimized model (Rail IoU: 75%)")
+                print(f"📊 Processing {len(test_images)} test images...")
+                print(f"📁 Results will be saved to: /home/mmc-server4/RailSafeNet/evaluation_results/")
+
+                for filename_img in test_images:
+                    if os.path.exists(os.path.join(PATH_jpgs, filename_img)):
+                        print(f"\n[{file_index + 1}/{len(test_images)}] Processing: {filename_img}")
+                        run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
+                        file_index += 1
+                    else:
+                        print(f"⚠️ Image not found: {filename_img}")
+
+                print(f"\n🎉 Comprehensive evaluation completed!")
+                print(f"📂 Generated {file_index} evaluation results in evaluation_results/")
         else:
                 file_index = 0
                 PATH_jpgs = 'Grafika/Video_export/frames'

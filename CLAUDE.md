@@ -51,6 +51,18 @@ pip install -r assets/requirements.txt
 - `python scripts/metrics_all_cls.py` - Compute metrics for all classes
 - `python scripts/metrics_filtered_cls.py` - Compute metrics for filtered classes
 
+### Model Optimization Pipeline (Updated 2025-09-18)
+- **Production model creation**: `python create_production_model.py` - Convert transfer learning model to optimized production format
+- **Model comparison**: `CUDA_VISIBLE_DEVICES=3 python test_model_comparison.py` - Compare original vs optimized model performance
+- **Transfer learning**: `CUDA_VISIBLE_DEVICES=2 wandb agent [sweep-id]` - Run WandB hyperparameter sweeps for model optimization
+
+#### Current Optimized Model Performance
+- **Model**: `segformer_b3_production_optimized_rail_0.7500.pth`
+- **Rail IoU**: 75% (significant improvement from 62.49% baseline)
+- **Inference time**: ~0.189s per image
+- **Location**: `/home/mmc-server4/RailSafeNet/models/`
+- **Comparison results**: `/home/mmc-server4/RailSafeNet/comparison_results/`
+
 ## Architecture Overview
 
 **RailSafeNet** is an industrial-grade tram safety system designed for real-world deployment with international safety standards compliance.
@@ -124,6 +136,25 @@ Both datasets use JSON configuration files for class mappings and data splits.
 - **Dynamic object focus**: People, cars, bicycles detection and distance measurement
 - **Safety standards**: International compliance for autonomous braking systems
 - **Scalability**: Multi-GPU training architecture supports larger models and datasets
+
+### File Management Principles (Added 2025-09-18)
+**IMPORTANT**: Always follow these principles when modifying code:
+
+1. **Modify Existing Files First**: Never create new files unnecessarily. Always check for existing files with similar functionality and modify them instead.
+
+2. **Explicit Documentation**: Always document the process of finding and modifying existing files. State clearly:
+   - Which existing files were found and their purposes
+   - What modifications were made and why
+   - Any new files created and justification for creation
+
+3. **Duplicate Prevention**: Before creating any new file, search for existing files that serve the same or similar purpose. Clean up duplicate files regularly.
+
+4. **Path Consistency**: Always use full absolute paths instead of relative paths. Ensure consistency across all configuration files.
+
+**Example Process**:
+- ✅ "Found existing `production_segformer_pytorch.py` for model loading, modifying it to use new model path"
+- ✅ "Modified existing `create_production_model.py` to add ONNX/TensorRT optimization features"
+- ❌ "Creating new `model_optimizer.py` for ONNX conversion" (without checking existing files)
 
 ## Deployment & Model Management
 

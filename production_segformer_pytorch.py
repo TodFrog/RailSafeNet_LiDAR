@@ -17,7 +17,7 @@ class ProductionSegFormerPyTorch:
     - Compatible with original TheDistanceAssessor interface
     """
 
-    def __init__(self, model_path="/home/mmc-server4/RailSafeNet/models/segformer_b3_transfer_best_0.6249.pth"):
+    def __init__(self, model_path="/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth"):
         self.model_path = model_path
         self.num_labels = 13
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -90,7 +90,8 @@ class ProductionSegFormerPyTorch:
 def load_model(model_path=None):
     """Load the PyTorch production model"""
     if model_path is None:
-        model_path = "/home/mmc-server4/RailSafeNet/models/segformer_b3_transfer_best_0.6249.pth"
+        # Use the new optimized model by default
+        model_path = "/home/mmc-server4/RailSafeNet/models/segformer_b3_production_optimized_rail_0.7500.pth"
     return ProductionSegFormerPyTorch(model_path)
 
 
