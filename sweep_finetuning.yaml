@@ -2,7 +2,6 @@ program: train_SegFormer_transfer_production.py
 method: bayes
 metric:
   goal: maximize
-  name: val_iou
 parameters:
   batch_size:
     values: [2, 4, 6, 8]
