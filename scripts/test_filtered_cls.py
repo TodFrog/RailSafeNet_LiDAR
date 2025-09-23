@@ -8,11 +8,31 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import torch.nn.functional as F
 from scripts.metrics_filtered_cls import compute_map_cls, compute_IoU, image_morpho
-from rs19_val.example_vis import rs19_label2bgr
 
-PATH_jpgs = 'RailNet_DT/assets/rs19val/jpgs/test'
-PATH_masks = 'RailNet_DT/assets/rs19val/uint8/test'
-PATH_model = 'RailNet_DT/assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth'
+# Safe import with fallback for rs19_label2bgr
+try:
+    from rs19_val.example_vis import rs19_label2bgr
+except ImportError:
+    # 13-class system color mapping for rail segmentation
+    rs19_label2bgr = {
+        0: (128, 64, 128),    # class 0
+        1: (244, 35, 232),    # rail road/platform
+        2: (70, 70, 70),      # class 2
+        3: (102, 102, 156),   # class 3
+        4: (0, 255, 0),       # rail track (bright green)
+        5: (153, 153, 153),   # class 5
+        6: (107, 142, 35),    # vegetation/sky
+        7: (220, 220, 0),     # class 7
+        8: (190, 153, 153),   # class 8
+        9: (255, 255, 0),     # rail road (bright yellow)
+        10: (70, 130, 180),   # class 10
+        11: (220, 20, 60),    # class 11
+        12: (255, 255, 255),  # background (white)
+    }
+
+PATH_jpgs = '/home/mmc-server4/Server/Datasets_hdd/rs19_val/jpgs/rs19_val'
+PATH_masks = '/home/mmc-server4/Server/Datasets_hdd/rs19_val/uint8/rs19_val'
+PATH_model = '/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/production/segformer_b3_transfer_best_rail_0.7791.pth'
 
 def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item = None):
     transform_img = A.Compose([
@@ -50,51 +70,69 @@ def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item
     return image_tr, image_vis, image_in, mask, mask_id_map
 
 def load_model(path_model):
+    from transformers import SegformerForSemanticSegmentation
     
-    model = torch.load(path_model, map_location=torch.device('cpu'))
+    # Load the saved state
+    checkpoint = torch.load(path_model, map_location=torch.device('cpu'))
+    
+    # Check if it's a state_dict or full model
+    if isinstance(checkpoint, dict):
+        # If it's a state_dict, create model and load weights
+        if 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        else:
+            state_dict = checkpoint
+            
+        # Create the model architecture
+        model = SegformerForSemanticSegmentation.from_pretrained(
+            "nvidia/segformer-b3-finetuned-cityscapes-1024-1024",
+            num_labels=13,  # 13 classes for your model
+            ignore_mismatched_sizes=True
+        )
+        
+        # Load the weights
+        model.load_state_dict(state_dict, strict=False)
+    else:
+        # If it's already a full model object
+        model = checkpoint
+    
     model = model.cpu()
     model.eval()
     return model
 
+
 def remap_ignored_clss(id_map):
-    ignore_list = [0,1,2,6,8,9,15,16,19,20]
-    for cls in ignore_list:
-        id_map[id_map==cls] = 255
-
-    ignore_set = set(ignore_list)
-    cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
-
-    # renumber the remaining classes 0-number of remaining classes
-    for idx, cls in enumerate(cls_remaining):
-        id_map[id_map==cls] = idx
-
-    id_map[id_map==255] = 12 # background
-    
+    """
+    For 13-class system, we keep all classes but map them properly
+    Background class is 12
+    """
+    # Ensure all values are within valid range [0-12]
+    id_map = np.clip(id_map, 0, 12)
     return id_map
 
 def prepare_for_display(mask, image, id_map, rs19_label2bgr, image_size = [224,224]):
-    # Mask + prediction preparation
-    mask = mask + 1
-    mask[mask==256] = 0
-    mask = remap_ignored_clss(mask)
-    mask = (mask + 100).detach().numpy().squeeze().astype(np.uint8)
-    mask_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
+    # Mask + prediction preparation for 13-class system
+    mask = mask.detach().numpy().squeeze().astype(np.uint8)
+    mask = np.clip(mask, 0, 12)  # Ensure mask values are in valid range
+    
+    # Add offset for visualization
+    mask_display = (mask + 100)
+    mask_rgb = cv2.cvtColor(mask_display.astype(np.uint8), cv2.COLOR_GRAY2RGB)
 
     # Opacity channel addition to both mask and img
     alpha_channel = np.full((mask.shape[0], mask.shape[1]), 255, dtype=np.uint8)
-    back_ids = mask==100
+    back_ids = mask == 12  # Background class
     alpha_channel[back_ids] = 0
     rgba_mask = cv2.merge((mask_rgb, alpha_channel))
 
     image = np.array(image.cpu().detach().numpy(), dtype=np.uint8)
     rgba_img = cv2.merge((image.transpose(1, 2, 0), alpha_channel))
     
-    # Label colors + background
-    rgbs = list(rs19_label2bgr.values())
-    rgbs.append((255,255,255))
+    # Label colors for 13 classes
+    rgbs = [rs19_label2bgr[i] for i in range(13)]
 
     blend_sources = np.zeros((image_size[0], image_size[1], 3), dtype=np.uint8)
-    for class_id in range(21):
+    for class_id in range(13):
         class_pixels = id_map == class_id
         rgb_color = np.array(rgbs[class_id])
 
@@ -108,7 +146,7 @@ def prepare_for_display(mask, image, id_map, rs19_label2bgr, image_size = [224,2
     
     return(rgba_mask, rgba_blend, blend_sources)
     
-def visualize(rgba_blend, rgba_mask):
+def visualize(rgba_blend, rgba_mask, filename, map_score, Mmap_score):
     # CV2 VIZUALISATION
     image1 = rgba_blend
     image2 = rgba_mask
@@ -123,8 +161,8 @@ def visualize(rgba_blend, rgba_mask):
     combined_image = np.zeros((600, 900, 4), dtype=np.uint8)  # Adjust the size as needed
 
     # Main loop for adjusting opacity and displaying the images
-    cv2.namedWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), 900, 600)  # Adjust the size as needed
+    cv2.namedWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map_score, Mmap_score), cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map_score, Mmap_score), 900, 600)  # Adjust the size as needed
 
     while True:
         
@@ -147,7 +185,7 @@ def visualize(rgba_blend, rgba_mask):
         combined_image[0:300, 600:900, :] = small_image1[:, :, :]
         combined_image[300:600, 600:900, :] = small_image2[:, :, :]
 
-        cv2.imshow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), combined_image)
+        cv2.imshow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map_score, Mmap_score), combined_image)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
@@ -237,16 +275,16 @@ if __name__ == "__main__":
         # INFERENCE + SOFTMAX
         id_map = process(model, image_norm, mask, model_type)
         
-        # mAP
+        # mAP - for 13-class system, background is class 12
         id_map_gt = remap_ignored_clss(id_map_gt)
-        map,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)
-        Mmap,classes_Map = compute_map_cls(id_map_gt, id_map, classes_Map, major = True)
+        map_score,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)
+        Mmap_score,classes_Map = compute_map_cls(id_map_gt, id_map, classes_Map, major = True)
         IoU,acc,prec,rec,classes_stats = compute_IoU(id_map_gt, id_map, classes_stats)
         MIoU,Macc,Mprec,Mrec,classes_Mstats = compute_IoU(id_map_gt, id_map, classes_Mstats, major=True)
         
-        print('{} | mAP:{:.3f}/{:.3f} | IoU:{:.3f}/{:.3f} | prec:{:.3f}/{:.3f} | rec:{:.3f}/{:.3f} | acc:{:.3f}/{:.3f}'.format(filename,map,Mmap,IoU,MIoU,prec,Mprec,rec,Mrec,acc,Macc))
-        mAPs.append(map)
-        MmAPs.append(Mmap)
+        print('{} | mAP:{:.3f}/{:.3f} | IoU:{:.3f}/{:.3f} | prec:{:.3f}/{:.3f} | rec:{:.3f}/{:.3f} | acc:{:.3f}/{:.3f}'.format(filename,map_score,Mmap_score,IoU,MIoU,prec,Mprec,rec,Mrec,acc,Macc))
+        mAPs.append(map_score)
+        MmAPs.append(Mmap_score)
         IoUs.append(IoU)
         MIoUs.append(MIoU)
         accs.append(acc)
@@ -258,7 +296,7 @@ if __name__ == "__main__":
         
         if vis:
             rgba_mask, rgba_blend, blend_sources = prepare_for_display(mask, image, id_map, rs19_label2bgr, image_size)        
-            visualize(rgba_blend, rgba_mask)
+            visualize(rgba_blend, rgba_mask, filename, map_score, Mmap_score)
 
     mAPs_avg, MmAPs_avg = np.nanmean(mAPs), np.nanmean(MmAPs)
     IoUs_avg, MIoUs_avg = np.nanmean(IoUs), np.nanmean(MIoUs)

@@ -1,5 +1,6 @@
 import cv2
 import os
+import time
 import json
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,71 +8,14 @@ from sklearn.linear_model import LinearRegression
 import matplotlib.path as mplPath
 import matplotlib.patches as patches
 from ultralyticsplus import YOLO
-import torch
-import torch.nn.functional as F
-from transformers import SegformerForSemanticSegmentation
+from scripts.test_filtered_cls import load, load_model, process
 
 PATH_jpgs = '/home/mmc-server4/Server/Datasets_hdd/rs19_val/jpgs/rs19_val'
-PATH_model_seg = '/home/mmc-server4/RailSafeNet/models/segformer_b3_improved_best_0.7424.pth'
+PATH_model_seg = '/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/production/segformer_b3_transfer_best_rail_0.7791.pth'
 PATH_model_det = '/home/mmc-server4/RailSafeNet_mini_DT/assets/models_pretrained/yolo/yolov8s.pt'
-
-def load_model(model_path):
-    """Load the trained SegFormer model"""
-    print(f"Loading SegFormer model from: {model_path}")
-    
-    # Initialize model
-    model = SegformerForSemanticSegmentation.from_pretrained(
-        "nvidia/mit-b3", 
-        num_labels=19,
-        ignore_mismatched_sizes=True
-    )
-    
-    # Load trained weights
-    state_dict = torch.load(model_path, map_location='cpu')
-    model.load_state_dict(state_dict)
-    model.eval()
-    
-    return model
-
-def load(filename, PATH_jpgs, image_size, dataset_type, item=None):
-    """Load and preprocess image for segmentation"""
-    image_path = os.path.join(PATH_jpgs, filename)
-    image = cv2.imread(image_path)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    original_image = image.copy()
-    
-    # Resize to model input size
-    image = cv2.resize(image, (image_size[0], image_size[1]))
-    
-    # Normalize for SegFormer
-    image_norm = image.astype(np.float32) / 255.0
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
-    
-    for i in range(3):
-        image_norm[:, :, i] = (image_norm[:, :, i] - mean[i]) / std[i]
-    
-    # Convert to tensor
-    image_norm = torch.from_numpy(image_norm).permute(2, 0, 1).unsqueeze(0)
-    
-    return image_norm, None, original_image, None, None
-
-def process(model, image_norm, mask, model_type):
-    """Process image through SegFormer model"""
-    with torch.no_grad():
-        outputs = model(image_norm)
-        logits = outputs.logits
-        
-        # Resize to target size (1080x1920 for full HD)
-        logits = F.interpolate(
-            logits, size=(1080, 1920), 
-            mode='bilinear', align_corners=False
-        )
-        
-        # Get predictions
-        predictions = torch.argmax(logits, dim=1)
-        
-    return predictions.squeeze().cpu().numpy()
+PATH_base = 'RailNet_DT/assets/pilsen_railway_dataset/'
+eda_path = '/home/mmc-server4/RailSafeNet/assets/pilsen_railway_dataset/eda_table.table.json'
+data_json = json.load(open(eda_path, 'r'))
 
 def load_yolo(PATH_model):
         model = YOLO(PATH_model)
@@ -82,13 +26,13 @@ def load_yolo(PATH_model):
         model.overrides['max_det'] = 1000  # maximum number of detections per image
         return model
 
-def find_extreme_y_values(arr, values=[1, 5, 9, 10, 12]):
+def find_extreme_y_values(arr, values=[4, 9]):  # Changed from [0, 6] to [4, 9]
         """
-        Optimized function to find the lowest and highest y-values (row indices) in a 2D array where 0 or 6 appears.
+        Optimized function to find the lowest and highest y-values (row indices) in a 2D array where 4 or 9 appears.
         
         Parameters:
         - arr: The input 2D NumPy array.
-        - values: The values to search for (default is [0, 6]).
+        - values: The values to search for (default is [4, 9] for rail track and rail road).
         
         Returns:
         A tuple (lowest_y, highest_y) representing the lowest and highest y-values. If values are not found, returns None.
@@ -152,8 +96,8 @@ def filter_crossings(image, edges_dict):
                                 if key_down == image.shape[0]-1:
                                         key_down = key-20
                                 
-                                edges_to_test_slope1 = robust_edges(image, [key_up], values=[1, 5, 9, 10, 12], min_width=5)
-                                edges_to_test_slope2 = robust_edges(image, [key_down], values=[1, 5, 9, 10, 12], min_width=5)
+                                edges_to_test_slope1 = robust_edges(image, [key_up], values=[4, 9], min_width=19)
+                                edges_to_test_slope2 = robust_edges(image, [key_down], values=[4, 9], min_width=19)
                                 
                                 values1, edges_to_test_slope1 = find_nearest_pairs(values, edges_to_test_slope1)
                                 values2, edges_to_test_slope2 = find_nearest_pairs(values, edges_to_test_slope2)
@@ -196,7 +140,7 @@ def filter_crossings(image, edges_dict):
                 
         return filtered_edges
 
-def robust_edges(image, y_levels, values=[1, 5, 9, 10, 12], min_width=5):
+def robust_edges(image, y_levels, values=[4, 9], min_width=19):  # Changed from [0, 6] to [4, 9]
         
         for y in y_levels:
                 row = image[y, :]
@@ -212,7 +156,7 @@ def robust_edges(image, y_levels, values=[1, 5, 9, 10, 12], min_width=5):
         
         return filtered_edges
 
-def find_edges(image, y_levels, values=[1, 5, 9, 10, 12], min_width=5):
+def find_edges(image, y_levels, values=[4, 9], min_width=19):  # Changed from [0, 6] to [4, 9]
         """
         Find start and end positions of continuous sequences of specified values at given y-levels in a 2D array,
         filtering for sequences that meet or exceed a specified minimum width.
@@ -220,7 +164,7 @@ def find_edges(image, y_levels, values=[1, 5, 9, 10, 12], min_width=5):
         Parameters:
         - arr: 2D NumPy array to search within.
         - y_levels: List of y-levels (row indices) to examine.
-        - values: Values to search for (default is [0, 6]).
+        - values: Values to search for (default is [4, 9] for rail track and rail road).
         - min_width: Minimum width of sequences to be included in the results.
 
         Returns:
@@ -312,7 +256,7 @@ def identify_ego_track(edges_dict, image_width):
             
     return ego_edges_dict
 
-def find_rails(arr, y_levels, values=[9, 10], min_width=3):
+def find_rails(arr, y_levels, values=[4, 9], min_width=5):  # Changed from [9, 10] to [4, 9]
         edges_all = []
         for y in y_levels:
                 row = arr[y, :]
@@ -361,7 +305,7 @@ def find_rail_sides(img, edges_dict):
         left_border = []
         right_border = []
         for y,xs in edges_dict.items():
-                rails = find_rails(img, [y], values=[9, 10], min_width=3)
+                rails = find_rails(img, [y], values=[4, 9], min_width=5)  # Changed from [9,10] to [4,9]
                 left_border_actual = [min(xs)[0],y]
                 right_border_actual = [max(xs)[1],y]
                 
@@ -894,7 +838,7 @@ def draw_classification(classification, id_map):
         else:
                 return
 
-def show_result(classification, id_map, names, borders, image, regions, file_index, filename):
+def show_result(classification, id_map, names, borders, image, regions, file_index):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (id_map.shape[1], id_map.shape[0]), interpolation = cv2.INTER_LINEAR)
         ratio = image.shape[0] / image.shape[1]
@@ -926,6 +870,8 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                         for line in side:
                                 line = np.array(line)
                                 plt.plot(line[:,1], line[:,0] ,'-', color='lightgrey', marker=None, linewidth=0.5)
+                                #plt.ylim(0, 1080)
+                                #plt.xlim(0, 1920)
                                 plt.gca().invert_yaxis()
 
         colors = ['yellow','orange','red']
@@ -934,60 +880,36 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                 for side in border:
                         side = np.array(side)
                         if side.size > 0:
-                                plt.plot(side[:,0],side[:,1] ,'-', color=colors[i], marker=None, linewidth=0.6)
+                                plt.plot(side[:,0],side[:,1] ,'-', color=colors[i], marker=None, linewidth=0.6) #color=colors[i]
+                                #plt.ylim(0, 1080)
+                                #plt.xlim(0, 1920)
                                 plt.gca().invert_yaxis()
         
-        plt.xlim(left=0)
-        plt.title(f'RailSafeNet Analysis - {filename} (Frame {file_index+1})', fontsize=14, fontweight='bold')
+        plt.xlim(left=0)  # Ensure only positive X values are displayed
         plt.tight_layout()
-        
-        # Show plot and wait for user input
-        plt.show(block=False)
-        
-        # Print information
-        print(f'\n=== Frame {file_index+1}: {filename} ===')
-        print('✅ Frame processed successfully!')
-        
-        if classification:
-            print(f'🔍 Detected objects: {len(classification)}')
-            for box in classification:
-                name = names[box[0]]
-                criticality = box[1]
-                color = box[2]
-                movement = "Moving" if box[5] == 1 else "Stationary"
-                print(f'  - {name} ({movement}): {color} zone (criticality: {criticality})')
-        else:
-            print('🔍 No objects detected in danger zones')
-            
-        print('\nPress Enter to continue to next frame, or type "q" to quit...')
-        user_input = input()
-        
-        plt.close(fig)  # Close the current figure
-        
-        if user_input.lower() == 'q':
-            return False  # Signal to quit
-        return True  # Signal to continue
+        plt.show()
+        #plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
+        #plt.close()
+        print('Frame processed successfully.')
 
-def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type, model_type, target_distances, file_index, item=None, num_ys = 15):
+def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type, model_type, target_distances, file_index, vis, item=None, num_ys = 15):
 
         segmentation_mask, image = segment(model_seg, image_size, filepath_img, PATH_jpgs, dataset_type, model_type, item)
-        print('🔄 Processing: {}'.format(filepath_img))
+        print('File: {}'.format(filepath_img))
         
         # Border search
         clues = get_clues(segmentation_mask, num_ys)
+        # Find all edges first
         edges = find_edges(segmentation_mask, clues, min_width=0)
+        
+        # NEW: Identify only the ego track (center track) from all detected edges
         image_width = segmentation_mask.shape[1]
-        
-        # Option 1: Use all rails (not just ego track)
-        # all_edges = edges
-        
-        # Option 2: Use ego track only (original logic)
         ego_edges = identify_ego_track(edges, image_width)
         
-        print(f"🚂 Rail classes used: [1,5,9,10,12] (ALL RAILS)")
-        print(f"🔍 Total rail edges found: {len(edges)} levels")
-        print(f"🎯 Ego track edges: {len(ego_edges)} levels")
-
+        print(f"Original edges found at {len(edges)} y-levels")
+        print(f"Ego track identified at {len(ego_edges)} y-levels")
+        
+        # Use only ego track for border detection
         borders, id_map, regions = border_handler(segmentation_mask, image, ego_edges, target_distances)
         
         # Detection
@@ -996,55 +918,42 @@ def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type,
         
         classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape, output_dims=segmentation_mask.shape)
         
-        # Show result and get user input
-        continue_processing = show_result(classification, id_map, model.names, borders, image, regions, file_index, filepath_img)
-        
-        return continue_processing
+        #draw_classification(classification, id_map)
+        show_result(classification, id_map, model.names, borders, image, regions, file_index)
 
 if __name__ == "__main__":
 
-        data_type = 'railsem19' #railsem19
-        model_type = "segformer" #segformer
+        data_type = 'railsem19' #railsem19, pilsen or testdata
+        model_type = "segformer" #segformer or deeplab
+        vis = False
         image_size = [1024,1024]
         target_distances = [650,1000,2000] #[600,1000,2000] [4000,5500,6500] [2000,3000,4000]
         num_ys = 10
         
         if data_type == 'pilsen':
-                print("❌ Pilsen dataset not configured. Use 'railsem19' instead.")
-        elif data_type == 'railsem19':
                 file_index = 0
-                print("🔄 Loading models...")
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
-                print("✅ Models loaded successfully!")
-                
-                print(f"\n🎯 RailSafeNet Sequential Image Analysis")
-                print(f"📁 Dataset: {data_type}")
-                print(f"🤖 SegFormer Model: {PATH_model_seg.split('/')[-1]}")
-                print(f"🚀 Processing images from: {PATH_jpgs}")
-                print(f"⚙️  Target distances: {target_distances} mm")
-                print("=" * 60)
-                
-                image_files = sorted([f for f in os.listdir(PATH_jpgs) if f.endswith('.jpg')])
-                total_files = len(image_files)
-                
-                print(f"📊 Found {total_files} images to process")
-                print("💡 Instructions: Press Enter to continue, 'q' to quit\n")
-                
-                for filename_img in image_files:
-                        continue_processing = run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, item=None, num_ys=num_ys)
-                        
-                        if not continue_processing:
-                                print("\n👋 Processing stopped by user.")
-                                break
-                                
+                for item in enumerate(data_json["data"]):
+                        filepath_img = item[1][1]["path"]
+                        run(model_seg, model_det, image_size, filepath_img, PATH_base, data_type, model_type, target_distances, file_index, vis=vis, item=item, num_ys=num_ys)
+        elif data_type == 'railsem19':
+                file_index = 0
+                model_seg = load_model(PATH_model_seg)
+                model_det = load_yolo(PATH_model_det)
+                for filename_img in os.listdir(PATH_jpgs):
+                        #filename_img = "rs07650.jpg"
+                        run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
                         file_index += 1
-                        
-                        # Progress indicator
-                        progress = ((file_index) / total_files) * 100
-                        print(f"📈 Progress: {file_index}/{total_files} ({progress:.1f}%)")
-                        
-                print(f"\n🎉 RailSafeNet analysis completed!")
-                print(f"📊 Processed {file_index} out of {total_files} images")
         else:
-                print("❌ Unsupported data type. Use 'railsem19' instead.") 
+                file_index = 0
+                PATH_jpgs = 'Grafika/Video_export/frames'
+                model_seg = load_model(PATH_model_seg)
+                model_det = load_yolo(PATH_model_det)
+                for filename_img in os.listdir(PATH_jpgs):
+                        if os.path.exists(os.path.join('Grafika/Video_export/frames_estimated', filename_img)):
+                                file_index += 1
+                                continue
+                        else:
+                                run(model_seg, model_det, image_size  , filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
+                                file_index += 1

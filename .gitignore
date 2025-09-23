@@ -40,4 +40,17 @@ analyze_original_model.py
 analyze_rail_classes.py
 comparison_results/
 evaluation_results/
+enhanced_results/
+/home/mmc-server4/RailSafeNet/evaluation_results/evaluation_summary.json
+fixed_results/
+robust_results/
+video_results/
+optimized_results/
+simple_results/
+class_analysis/
+archive_old_files/
+assets/models_pretrained/segformer/production/
 
+
+CURRENT_STATUS_SUMMARY.md
+ENHANCED_PERFORMANCE_COMPARISON.md
