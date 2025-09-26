@@ -50,7 +50,10 @@ simple_results/
 class_analysis/
 archive_old_files/
 assets/models_pretrained/segformer/production/
+assets/models_pretrained/
 
 
 CURRENT_STATUS_SUMMARY.md
 ENHANCED_PERFORMANCE_COMPARISON.md
+ESSENTIAL_FILES_ROADMAP.md
+*.md
