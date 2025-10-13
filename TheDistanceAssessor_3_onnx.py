@@ -16,7 +16,7 @@ from scripts.metrics_filtered_cls import image_morpho
 
 PATH_jpgs = '/home/mmc-server4/Server/Datasets_hdd/rs19_val/jpgs/rs19_val'
 PATH_model_seg = '/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/optimized/segformer_b3_transfer_best_0.7961_896x512.onnx'
-PATH_model_det = '/home/mmc-server4/RailSafeNet/assets/models_pretrained/yolo/yolov8s_896x512.onnx'
+PATH_model_det = '/home/mmc-server4/RailSafeNet/assets/models_pretrained/yolo/yolov8s.onnx'
 PATH_base = 'RailNet_DT/assets/pilsen_railway_dataset/'
 eda_path = '/home/mmc-server4/RailSafeNet/assets/pilsen_railway_dataset/eda_table.table.json'
 data_json = json.load(open(eda_path, 'r'))
@@ -33,14 +33,8 @@ class ONNXSegmentationEngine:
         self.input_name = self.session.get_inputs()[0].name
         self.output_names = [output.name for output in self.session.get_outputs()]
         
-        # Get expected input shape
-        input_shape = self.session.get_inputs()[0].shape
-        self.expected_height = input_shape[2] if len(input_shape) > 2 else 512
-        self.expected_width = input_shape[3] if len(input_shape) > 3 else 896
-        
         print(f"Segmentation model loaded with providers: {self.session.get_providers()}")
-        print(f"Input shape: {input_shape}")
-        print(f"Expected input size: [{self.expected_height}, {self.expected_width}]")
+        print(f"Input shape: {self.session.get_inputs()[0].shape}")
         print(f"Output names: {self.output_names}")
     
     def infer(self, input_data):
@@ -61,24 +55,7 @@ class ONNXYOLOEngine:
         self.conf_threshold = 0.25
         self.iou_threshold = 0.45
         
-        # Check expected input data type and shape
-        input_type = self.session.get_inputs()[0].type
-        input_shape = self.session.get_inputs()[0].shape
-        self.use_float16 = 'float16' in input_type
-        
-        # Get expected input size from ONNX model
-        if len(input_shape) >= 4:
-            self.input_height = input_shape[2] if isinstance(input_shape[2], int) else 512
-            self.input_width = input_shape[3] if isinstance(input_shape[3], int) else 896
-        else:
-            self.input_height = 512
-            self.input_width = 896
-        
         print(f"YOLO model loaded with providers: {self.session.get_providers()}")
-        print(f"Expected input type: {input_type}")
-        print(f"Expected input shape: {input_shape}")
-        print(f"Using input size: [{self.input_height}, {self.input_width}]")
-        print(f"Using float16: {self.use_float16}")
         
         # COCO class names for YOLO
         self.names = {
@@ -93,16 +70,12 @@ class ONNXYOLOEngine:
         }
     
     def predict(self, image):
-        # Use ONNX model's expected input size instead of hardcoded 640
+        # Preprocess image for YOLO
+        input_size = 640
         original_shape = image.shape[:2]
-        image_resized = cv2.resize(image, (self.input_width, self.input_height))
+        image_resized = cv2.resize(image, (input_size, input_size))
         image_rgb = cv2.cvtColor(image_resized, cv2.COLOR_BGR2RGB)
         image_norm = image_rgb.astype(np.float32) / 255.0
-        
-        # Convert to float16 if required
-        if self.use_float16:
-            image_norm = image_norm.astype(np.float16)
-            
         image_input = np.transpose(image_norm, (2, 0, 1))
         image_input = np.expand_dims(image_input, axis=0)
         
@@ -110,7 +83,7 @@ class ONNXYOLOEngine:
         outputs = self.session.run(self.output_names, {self.input_name: image_input})
         
         # Post-process output
-        results = self.post_process(outputs[0], original_shape, self.input_width)
+        results = self.post_process(outputs[0], original_shape, input_size)
         return [results]
     
     def post_process(self, output, original_shape, input_size):
@@ -124,9 +97,8 @@ class ONNXYOLOEngine:
         class_ids = []
         
         # Scale factors for converting back to original image size
-        # Note: Using input_size parameter instead of hardcoded 640
-        scale_x = original_shape[1] / self.input_width
-        scale_y = original_shape[0] / self.input_height
+        scale_x = original_shape[1] / input_size
+        scale_y = original_shape[0] / input_size
         
         for detection in output:
             # detection: [x_center, y_center, width, height, confidence, class_scores...]
@@ -784,7 +756,7 @@ def border_handler(id_map, image, edges, target_distances):
         
     return borders, id_map, regions
 
-def load(filename, PATH_jpgs, input_size=[512, 896], dataset_type='rs19val', item=None):
+def load(filename, PATH_jpgs, input_size=[1024, 1024], dataset_type='rs19val', item=None):
     transform_img = A.Compose([
         A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
@@ -1187,7 +1159,7 @@ if __name__ == "__main__":
     data_type = 'railsem19' #railsem19, pilsen or testdata
     model_type = "segformer" #segformer or deeplab (this parameter is kept for compatibility but not used with ONNX)
     vis = False
-    image_size = [512, 896]  # ONNX 모델에 맞게 변경
+    image_size = [1024,1024]
     target_distances = [650,1000,2000] #[600,1000,2000] [4000,5500,6500] [2000,3000,4000]
     num_ys = 10
     

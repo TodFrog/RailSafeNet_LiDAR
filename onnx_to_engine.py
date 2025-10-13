@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """
-Convert ONNX models to TensorRT engines optimized for the target NVIDIA platform.
-### 중요 ###
-이 스크립트는 최종 배포 대상인 AGX Orin 또는 대상 GPU가 장착된 장비에서 직접 실행해야 합니다.
-TensorRT 엔진은 실행 환경의 GPU 아키텍처에 맞춰 생성되므로 교차 컴파일이 불가능합니다.
+Convert multiple ONNX models to TensorRT engines.
+### Titan RTX 24GB 환경에 최적화된 최종 버전 (Dynamic Shape 지원) ###
 """
 
 import tensorrt as trt
 import os
 
-def create_tensorrt_engine(onnx_path, engine_path, model_name):
+def create_tensorrt_engine(onnx_path, engine_path, model_name, input_shape):
     """
-    Convert ONNX model to a platform-specific TensorRT engine.
+    ONNX 모델을 Titan RTX에 최적화된 TensorRT 엔진으로 변환합니다.
     """
+    print("-" * 60)
     print(f"🚀 Converting {model_name} to TensorRT Engine")
     print(f"📁 ONNX Input: {onnx_path}")
     print(f"📁 Engine Output: {engine_path}")
@@ -22,66 +21,66 @@ def create_tensorrt_engine(onnx_path, engine_path, model_name):
         return False
 
     try:
-        print("🔧 Setting up TensorRT builder...")
-        logger = trt.Logger(trt.Logger.WARNING) # INFO는 너무 장황하므로 WARNING으로 변경
+        logger = trt.Logger(trt.Logger.INFO)
         builder = trt.Builder(logger)
-
-        print("📦 Creating network definition...")
         network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
         parser = trt.OnnxParser(network, logger)
+        config = builder.create_builder_config()
 
         print("📦 Parsing ONNX model...")
         with open(onnx_path, 'rb') as model_file:
             if not parser.parse(model_file.read()):
-                print("❌ Failed to parse ONNX model")
+                print(f"❌ Failed to parse ONNX model for {model_name}")
                 for error in range(parser.num_errors):
-                    print(f"   Error {error}: {parser.get_error(error).desc()}")
+                    print(parser.get_error(error))
                 return False
-        print("✅ ONNX model parsed successfully")
+        
+        print("✅ ONNX model parsed successfully.")
 
-        print("⚙️  Configuring TensorRT builder...")
-        config = builder.create_builder_config()
-
-        # Set memory pool limit (Workspace) - 필요 시 4GB 등으로 늘릴 수 있음
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)  # 2GB
-
-        # Enable FP16 precision for better performance on modern NVIDIA GPUs
-        if builder.platform_has_fast_fp16:
-            config.set_flag(trt.BuilderFlag.FP16)
-            print("✅ FP16 precision enabled")
-
-        # === 동적 입력 크기 처리를 위한 Optimization Profile 설정 ===
+        # --- 🚀 Dynamic Shape 문제 해결을 위한 핵심 수정 ---
+        print("🔧 Configuring TensorRT builder with Optimization Profile...")
         profile = builder.create_optimization_profile()
-        # 모델의 입력 이름 ('pixel_values')과 동일해야 함
-        input_tensor = network.get_input(0) 
-        input_name = input_tensor.name
         
-        # 최소(min), 최적(opt), 최대(max) 입력 shape을 지정
-        # 예: 배치 크기 1~4, 고정된 3x1024x1024 이미지
-        profile.set_shape(input_name, min=(1, 3, 512, 896), opt=(1, 3, 512, 896), max=(1, 3, 512, 896))
+        # 네트워크의 첫 번째 입력 이름을 가져옵니다.
+        input_tensor_name = network.get_input(0).name
+        
+        # 고정된 입력 크기를 사용할 것이므로 min, opt, max를 모두 동일하게 설정합니다.
+        print(f"🛠️ Setting Optimization Profile for input '{input_tensor_name}' with shape {input_shape}")
+        profile.set_shape(input_tensor_name, min=input_shape, opt=input_shape, max=input_shape)
+        
+        # 생성된 프로파일을 빌더 설정에 추가합니다.
         config.add_optimization_profile(profile)
-        print(f"✅ Optimization profile created for dynamic shapes (min/opt/max batch size: 1/1/4)")
-        # =========================================================
+        # --- 수정 끝 ---
 
-        print("🔨 Building TensorRT engine...")
-        print("   This process may take several minutes...")
+        # 작업 공간 및 FP16 설정은 그대로 유지합니다.
+        max_workspace_gb = 8
+        print(f"🛠️ Setting MemoryPool limit for WORKSPACE to {max_workspace_gb}GB")
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, max_workspace_gb * (1 << 30))
         
-        serialized_engine = builder.build_serialized_network(network, config)
+        if builder.platform_has_fast_fp16:
+            print("🛠️ Enabling FP16 mode for maximum performance.")
+            config.set_flag(trt.BuilderFlag.FP16)
+        
+        print("✅ Builder configured.")
 
-        if serialized_engine is None:
-            print("❌ Failed to build TensorRT engine")
+        print("🧠 Building TensorRT engine... (This can take several minutes)")
+        plan = builder.build_serialized_network(network, config)
+
+        if plan is None:
+            print(f"❌ Failed to build TensorRT engine for {model_name}")
             return False
 
-        print("💾 Saving TensorRT engine...")
+        print("✅ Engine built successfully.")
+        
+        print(f"💾 Saving TensorRT engine to {engine_path}...")
         with open(engine_path, 'wb') as f:
-            f.write(serialized_engine)
+            f.write(plan)
 
         engine_size_mb = os.path.getsize(engine_path) / (1024*1024)
         onnx_size_mb = os.path.getsize(onnx_path) / (1024*1024)
 
-        print(f"✅ TensorRT engine created successfully!")
+        print(f"✅ TensorRT engine for '{model_name}' created successfully!")
         print(f"📊 ONNX size: {onnx_size_mb:.1f}MB → Engine size: {engine_size_mb:.1f}MB")
-        print(f"🚀 Ready for deployment!")
         return True
 
     except Exception as e:
@@ -90,56 +89,48 @@ def create_tensorrt_engine(onnx_path, engine_path, model_name):
         traceback.print_exc()
         return False
 
-# main 함수는 기존과 동일하게 유지...
-def main():
-    """Convert ONNX models to TensorRT engines"""
 
-    print("🚀 ONNX to TensorRT Engine Conversion Pipeline")
-    print("=" * 60)
-    
-    # ... (기존 main 함수 내용) ...
-    # Define ONNX models to convert
-    onnx_models = [
+def main():
+    print("🚀 ONNX to TensorRT Engine Conversion Pipeline (Titan RTX Profile)")
+    print("=" * 70)
+
+    # --- 변환할 모델 목록 (입력 shape 정보 추가) ---
+    models_to_convert = [
         {
-            'name': 'Original SegFormer B3 (13 classes)',
-            'onnx_path': '/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/optimized/segformer_b3_original_13class_896x512.onnx',
-            'engine_path': '/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/optimized/segformer_b3_original_13class.engine'
-        },
-        {
-            'name': 'Transfer Learning Best Model (Rail IoU: 0.7961)',
+            'name': 'SegFormer (896x512)',
             'onnx_path': '/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/optimized/segformer_b3_transfer_best_0.7961_896x512.onnx',
-            'engine_path': '/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/optimized/segformer_b3_transfer_best_0.7961.engine'
-        }
+            'engine_path': '/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/optimized/segformer_b3_transfer_best_0.7961.engine',
+            'input_shape': (1, 3, 512, 896) # (batch, channels, height, width)
+        },
+        # {
+        #     'name': 'YOLOv8s (896x512)',
+        #     'onnx_path': '/home/mmc-server4/RailSafeNet/assets/models_pretrained/yolo/yolov8s_896x512.onnx',
+        #     'engine_path': '/home/mmc-server4/RailSafeNet/assets/models_pretrained/yolo/yolov8s_896x512.engine',
+        #     'input_shape': (1, 3, 512, 896)
+        # }
     ]
 
     results = []
+    print(f"✅ TensorRT version: {trt.__version__}")
 
-    # Check if TensorRT is available
-    try:
-        import tensorrt as trt
-        print(f"✅ TensorRT version: {trt.__version__}")
-    except ImportError:
-        print("❌ TensorRT not available. Please install TensorRT for engine conversion.")
-        return
-
-    for model_info in onnx_models:
+    for model_info in models_to_convert:
         success = create_tensorrt_engine(
             model_info['onnx_path'],
             model_info['engine_path'],
-            model_info['name']
+            model_info['name'],
+            model_info['input_shape'] # input_shape 인자 전달
         )
         results.append((model_info['name'], success))
 
-    # Summary
+    # --- 최종 요약 ---
+    print("\n" + "=" * 70)
     print("📋 Engine Conversion Summary:")
-    print("=" * 50)
+    print("-" * 70)
     for name, success in results:
         status = "✅ SUCCESS" if success else "❌ FAILED"
         print(f"  {status}: {name}")
-
-    successful_conversions = sum(1 for _, success in results if success)
-    print(f"\n🎯 {successful_conversions}/{len(results)} engines created successfully!")
+    print("=" * 70)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
