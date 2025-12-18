@@ -188,24 +188,46 @@ def find_edges(image, y_levels, values=[4, 9], min_width=19):
             edges_dict[y] = filtered_edges
     return edges_dict
 
-def identify_ego_track(edges_dict, image_width):
+def identify_ego_track(edges_dict, image_width, previous_track_center=None):
+    """
+    Identify ego-track from detected edges.
+
+    Args:
+        edges_dict: Dictionary of detected edges per y-level
+        image_width: Width of image
+        previous_track_center: Optional x-coordinate of previous frame's track center
+                              (for temporal consistency in tracking mode)
+
+    Returns:
+        Dictionary of ego-track edges per y-level
+    """
     ego_edges_dict, last_ego_track_center = {}, None
     sorted_y_levels = sorted(edges_dict.keys(), reverse=True)
-    image_center_x = image_width / 2
-    
+
+    # Determine reference center for initial selection
+    if previous_track_center is not None:
+        # Phase 4 TRACKING: Use previous track position for consistency
+        reference_center = previous_track_center
+    else:
+        # Phase 3 baseline: Use image center
+        reference_center = image_width / 2
+
     if sorted_y_levels:
         first_y = sorted_y_levels[0]
         tracks_at_first_y = edges_dict.get(first_y, [])
         if tracks_at_first_y:
-            closest_track = min(tracks_at_first_y, key=lambda track: abs(((track[0] + track[1]) / 2) - image_center_x))
+            # Select track closest to reference center (previous track or image center)
+            closest_track = min(tracks_at_first_y,
+                              key=lambda track: abs(((track[0] + track[1]) / 2) - reference_center))
             ego_edges_dict[first_y] = [closest_track]
             last_ego_track_center = (closest_track[0] + closest_track[1]) / 2
-    
+
     for y in sorted_y_levels[1:]:
         if last_ego_track_center is None: break
         tracks_at_y = edges_dict.get(y, [])
         if tracks_at_y:
-            closest_track = min(tracks_at_y, key=lambda track: abs(((track[0] + track[1]) / 2) - last_ego_track_center))
+            closest_track = min(tracks_at_y,
+                              key=lambda track: abs(((track[0] + track[1]) / 2) - last_ego_track_center))
             ego_edges_dict[y] = [closest_track]
             last_ego_track_center = (closest_track[0] + closest_track[1]) / 2
     return ego_edges_dict
@@ -258,7 +280,14 @@ def find_dist_from_edges(edges_dict, left_border, right_border, real_life_width_
     diffs_width = {k: max(e - s for s, e in v) for k, v in edges_dict.items() if v}
     scale_factors = {k: real_life_width_mm / v for k, v in diffs_width.items() if v > 0}
     target_distances_px = {k: int(real_life_target_mm / v) for k, v in scale_factors.items() if v > 0}
-    
+
+    # Border width constraint: Limit to 1.5x rail width to prevent invading adjacent tracks
+    # This prevents danger zones from extending too far beyond the ego-track
+    for k in target_distances_px.keys():
+        rail_width_px = diffs_width.get(k, 100)  # Detected rail width in pixels
+        max_border_extension = int(rail_width_px * 1.5)  # Max 1.5x rail width
+        target_distances_px[k] = min(target_distances_px[k], max_border_extension)
+
     end_points_left, end_points_right = {}, {}
     for point in left_border:
         y = point[1]
@@ -278,16 +307,17 @@ def find_zone_border(id_map, edges, irl_width_mm=1435, irl_target_mm=1000):
     return [border_l, border_r]
 
 def get_clues(segmentation_mask, number_of_clues):
-    """선로 감지 범위를 이미지 하단 2/5로 제한"""
+    """선로 감지 범위를 이미지 하단 45%로 제한"""
     height = segmentation_mask.shape[0]
-    # 이미지 하단 2/5까지만 탐지
-    limited_mask = segmentation_mask[height*3//5:, :]
-    
+    # 이미지 하단 45%까지만 탐지 (상단 55% 제외)
+    start_y = int(height * 0.55)  # 55% 지점부터 시작
+    limited_mask = segmentation_mask[start_y:, :]
+
     lowest, highest = find_extreme_y_values(limited_mask)
     if lowest is not None and highest is not None and highest > lowest:
-        # 실제 이미지 좌표로 변환 (하단 2/5 기준이므로 height*3//5 더함)
-        actual_lowest = lowest + height*3//5
-        actual_highest = highest + height*3//5
+        # 실제 이미지 좌표로 변환 (하단 45% 기준이므로 start_y 더함)
+        actual_lowest = lowest + start_y
+        actual_highest = highest + start_y
         
         clue_step = int((actual_highest - actual_lowest) / (number_of_clues + 1))
         if clue_step == 0: clue_step = 1

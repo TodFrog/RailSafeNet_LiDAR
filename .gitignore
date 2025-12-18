@@ -1,47 +1,121 @@
-/.vscode
-/geckodriver.log
-/__pycache__
+# ===========================================
+# RailSafeNet_LiDAR .gitignore
+# ===========================================
+
+# -------------------------------------------
+# 1. Datasets & Large Files (MUST NOT BE DELETED)
+# -------------------------------------------
+# Video datasets
+assets/crop/
+assets/crop2/
+*.mp4
+*.avi
+*.mov
+
+# Model weights (large binary files)
+assets/models_pretrained/
+*.pth
+*.pt
+*.onnx
+*.engine
+yolov8n.pt
+
+# Dataset directories
+assets/pilsen_railway_dataset/
+assets/rs19val/
 rs19_val/
 railway_dataset/
-wandb/
+
+# Calibration cache
+assets/calibration_cache/
+
+# -------------------------------------------
+# 2. IDE & Editor Settings
+# -------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.vscode
+
+# -------------------------------------------
+# 3. Python Cache & Build Artifacts
+# -------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# -------------------------------------------
+# 4. Virtual Environments
+# -------------------------------------------
 .env
 .venv
 env/
 venv/
-other/
 ENV/
-assets/models_pretrained/ultralyticsplus/yolov8s.pt
-assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth
 env.bak/
 venv.bak/
-models/
-# pyenv
 .python-version
 
-# Installer logs
+# -------------------------------------------
+# 5. Testing & Coverage
+# -------------------------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+tests/fixtures/generated/
+test_output/
+
+# -------------------------------------------
+# 6. Logs & Temp Files
+# -------------------------------------------
+*.log
+logs/
+geckodriver.log
 pip-log.txt
 pip-delete-this-directory.txt
+result.txt
 
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-*.vscode
-assets/crop
-run_sweep.sh
-assets/models_pretrained/segformer/segformer_b3_improved_best_0.7419.pth
-assets/models_pretrained/yolo/yolov8s.pt
-assets/models_pretrained/yolo/yolov8n.pt
-assets/models_pretrained/yolo/yolov8s.engine
-assets/models_pretrained/yolo/yolov8s.onnx
-investigate_railsem19_classes.py
-debug_segmentation.py
-analyze_original_model.py
-analyze_rail_classes.py
+# -------------------------------------------
+# 7. OS Generated Files
+# -------------------------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------------------------
+# 8. Jupyter Notebook
+# -------------------------------------------
+.ipynb_checkpoints
+
+# -------------------------------------------
+# 9. W&B (Weights & Biases)
+# -------------------------------------------
+wandb/
+
+# -------------------------------------------
+# 10. Generated Results (rebuild-able)
+# -------------------------------------------
 comparison_results/
 evaluation_results/
 enhanced_results/
-/home/mmc-server4/RailSafeNet/evaluation_results/evaluation_summary.json
 fixed_results/
 robust_results/
 video_results/
@@ -49,11 +123,36 @@ optimized_results/
 simple_results/
 class_analysis/
 archive_old_files/
-assets/models_pretrained/segformer/production/
-assets/models_pretrained/
 
+# -------------------------------------------
+# 11. Old Analysis Scripts (not needed)
+# -------------------------------------------
+investigate_railsem19_classes.py
+debug_segmentation.py
+analyze_original_model.py
+analyze_rail_classes.py
+run_sweep.sh
 
+# -------------------------------------------
+# 12. Temporary Status Files
+# -------------------------------------------
 CURRENT_STATUS_SUMMARY.md
 ENHANCED_PERFORMANCE_COMPARISON.md
-ESSENTIAL_FILES_ROADMAP.md
-*.md
+
+# -------------------------------------------
+# 13. Other
+# -------------------------------------------
+other/
+
+# -------------------------------------------
+# IMPORTANT: Keep these files tracked
+# -------------------------------------------
+# !README.md
+# !LICENSE.txt
+# !requirements.txt
+# !final_project.md
+# !config/
+# !src/
+# !tests/
+# !scripts/
+# !JetsonRailSafeApp/

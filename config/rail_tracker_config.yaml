@@ -1,0 +1,217 @@
+# Rail Tracker Configuration
+# Polynomial-based rail tracking with temporal smoothing and straight-line locking
+# Based on video_center_smooth_v2.py implementation
+
+# =============================================================================
+# Tracking Region Configuration
+# =============================================================================
+tracking_region:
+  # Vertical range to track (percentage of image height)
+  # start_y: Bottom of image minus this offset (pixels)
+  # end_y: Percentage of image height (0.55 = bottom 45%)
+  bottom_offset_px: 20
+  top_percentage: 0.55  # Track from bottom to middle (45% of image)
+
+  # Scanning step for edge extraction
+  scan_step_px: 1  # Sample every N pixels (smaller = more measurements, slower)
+
+# =============================================================================
+# Polynomial Fitting Configuration
+# =============================================================================
+polynomial_fitting:
+  # Minimum number of measurements required for fitting
+  min_measurements: 10
+
+  # Weighted Least Squares
+  # Trust bottom points (closer to camera) more than top points
+  weight_bias: 0.5  # Additional weight for bottom points (0.0-1.0)
+
+  # Y-coordinate normalization for numerical stability
+  # Automatically computed from start_y and end_y
+
+# =============================================================================
+# Temporal Smoothing (Exponential Moving Average)
+# =============================================================================
+temporal_smoothing:
+  # EMA alpha parameter (0.0-1.0)
+  # Lower = smoother transitions, slower response
+  # Higher = faster response, less smoothing
+  alpha: 0.25
+
+  # Alpha values guide:
+  # 0.05  - Very smooth, slow adaptation (use for very stable tracks)
+  # 0.10  - Smooth, moderate adaptation
+  # 0.15  - Balanced (RECOMMENDED for most scenarios)
+  # 0.20  - Responsive, less smoothing
+  # 0.30  - Fast response, minimal smoothing
+
+# =============================================================================
+# Straight-Line Locking
+# =============================================================================
+straight_line_locking:
+  # Curvature threshold for straight-line detection
+  # If abs(curvature_coeff) < threshold, consider track straight
+  curvature_threshold: 15.0
+
+  # Curvature reduction factor when in straight mode
+  # Reduces curvature coefficient by this factor
+  reduction_factor: 0.1  # 10% of original curvature
+
+  # Threshold guide:
+  # 5.0   - Very strict (only perfectly straight tracks)
+  # 10.0  - Moderate (RECOMMENDED)
+  # 15.0  - Lenient (allows slight curvature)
+  # 20.0  - Very lenient (minimal locking)
+
+# =============================================================================
+# Width Constraints
+# =============================================================================
+width_constraints:
+  # Valid width range for rail detection (pixels)
+  min_width_px: 50
+  max_width_px: 400
+
+  # Clamping range for fitted width polynomial (pixels)
+  clamp_min_px: 60
+  clamp_max_px: 350
+
+# =============================================================================
+# Edge Candidate Selection
+# =============================================================================
+edge_selection:
+  # Search window for finding edges at each y-level (pixels)
+  search_offset_range: 3  # Check y, y±1, y±2, y±3
+
+  # Initial selection: Choose track closest to image center
+  # Subsequent selection: Choose track closest to previous center
+  # This provides temporal continuity
+
+# =============================================================================
+# Hazard Zone Configuration
+# =============================================================================
+hazard_zones:
+  # Zone widths (pixels) extending from rail edges at BOTTOM of image
+  # These widths will taper as y increases (perspective effect)
+
+  # Red zone (immediate danger) - closest to rail
+  red_zone_width_px: 100
+
+  # Orange zone (caution) - middle zone
+  orange_zone_width_px: 150  # Additional width beyond red zone
+
+  # Yellow zone (warning) - outer zone
+  yellow_zone_width_px: 200  # Additional width beyond orange zone
+
+  # Perspective taper factor (0.0-1.0)
+  # Controls how much zones narrow toward the top
+  # 0.0 = no taper (parallel lines)
+  # 0.5 = moderate taper (RECOMMENDED)
+  # 1.0 = strong taper (very narrow at top)
+  perspective_taper: 0.8
+
+  # Zone colors (BGR format)
+  red_color: [0, 0, 255]      # Red
+  orange_color: [0, 165, 255]  # Orange
+  yellow_color: [0, 255, 255]  # Yellow
+
+  # Zone transparency
+  zone_alpha: 0.3  # 0.0 = transparent, 1.0 = opaque
+
+# =============================================================================
+# Visualization
+# =============================================================================
+visualization:
+  # Mode display colors (BGR format)
+  color_straight:
+    B: 0
+    G: 255
+    R: 0  # Green
+
+  color_curved:
+    B: 0
+    G: 165
+    R: 255  # Orange
+
+  # Rail zone overlay (green area on tracks)
+  rail_zone_color:
+    B: 0
+    G: 255
+    R: 0  # Green
+  rail_zone_alpha: 0.3  # Transparency (0.0-1.0)
+
+  # Edge lines
+  edge_line_color:
+    B: 255
+    G: 255
+    R: 255  # White
+  edge_line_thickness: 2
+
+  # Center line
+  center_line_color:
+    B: 255
+    G: 255
+    R: 0  # Yellow (cyan in BGR)
+  center_line_thickness: 3
+
+# =============================================================================
+# Performance Tuning & Caching
+# =============================================================================
+performance:
+  # Dense output generation (every pixel for smooth visualization)
+  output_step_px: 1  # Generate curve point every N pixels
+
+  # Use this to balance quality vs. performance
+  # 1 = Smoothest (highest quality)
+  # 2 = Good quality, 2x faster
+  # 5 = Lower quality, 5x faster
+
+  # ============================================================================
+  # Inference Caching Configuration
+  # ============================================================================
+  # Control how often models run inference vs. reusing cached results
+  # Lower interval = more frequent inference = higher accuracy but slower FPS
+  # Higher interval = less frequent inference = lower accuracy but higher FPS
+
+  segmentation_cache_interval: 3  # Run SegFormer every N frames (1-10)
+  # 1 = No caching, run every frame (highest accuracy, ~15-20 FPS)
+  # 2 = Run every 2nd frame, cache 50% (~25-30 FPS)
+  # 3 = Run every 3rd frame, cache 67% (~30-35 FPS) [RECOMMENDED]
+  # 5 = Run every 5th frame, cache 80% (~40+ FPS, may lose track details)
+
+  detection_cache_interval: 1  # Run YOLO every N frames (1-5)
+  # 1 = No caching, run every frame (best for fast-moving objects) [RECOMMENDED]
+  # 2 = Run every 2nd frame, cache 50% (~30-35 FPS, acceptable for slow objects)
+  # 3 = Run every 3rd frame, cache 67% (may miss fast objects)
+  # 5 = Run every 5th frame, cache 80% (not recommended for safety-critical detection)
+
+# =============================================================================
+# Advanced Parameters (Modify with caution)
+# =============================================================================
+advanced:
+  # Polynomial degree (fixed at 2 for quadratic fitting)
+  # x = a*y^2 + b*y + c
+  polynomial_degree: 2
+
+  # Separate width polynomial fitting
+  # w = a_w*y^2 + b_w*y + c_w
+  fit_width_polynomial: true
+
+  # Apply width curvature reduction in straight mode
+  reduce_width_curvature_in_straight: true
+
+  # Y-coordinate normalization range
+  y_normalization_range: [-1.0, 1.0]
+
+# =============================================================================
+# Logging & Debugging
+# =============================================================================
+logging:
+  # Print mode (Straight/Curved) every N frames
+  log_mode_every_n_frames: 30
+
+  # Print tracking statistics
+  log_statistics: true
+
+  # Debug output
+  debug_polynomial_coeffs: false  # Print coefficients each frame
+  debug_measurement_count: false  # Print number of measurements

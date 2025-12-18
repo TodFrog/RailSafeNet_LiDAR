@@ -1,0 +1,19 @@
+# Core dependencies for RailSafeNet LiDAR
+numpy>=1.21.0
+opencv-python>=4.5.0
+torch>=1.10.0
+tensorrt>=8.0.0
+pycuda>=2021.1
+albumentations>=1.1.0
+matplotlib>=3.4.0
+scikit-learn>=1.0.0
+
+# Testing dependencies
+pytest>=7.0.0
+pytest-cov>=3.0.0
+pytest-benchmark>=3.4.0
+pytest-mock>=3.6.0
+
+# Additional dependencies from existing codebase
+transformers
+ultralyticsplus
