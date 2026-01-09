@@ -349,3 +349,155 @@ class PolynomialRailTracker:
         self.frame_count = 0
         self.straight_frames = 0
         self.curved_frames = 0
+
+    def update(
+        self,
+        left_edge: np.ndarray,
+        right_edge: np.ndarray
+    ) -> Tuple[List[Tuple[int, int]], np.ndarray, str]:
+        """
+        Update tracker with detected rail edges.
+
+        This method provides a simplified interface for tracking rail edges
+        by computing center points and width profile from left/right edges.
+
+        Args:
+            left_edge: (N, 2) array of left edge points [(x, y), ...]
+            right_edge: (N, 2) array of right edge points [(x, y), ...]
+
+        Returns:
+            center_points: List of (x, y) center points for the rail
+            width_profile: Array of widths at each center point
+            mode: "Straight" or "Curved"
+        """
+        self.frame_count += 1
+
+        # Validate input
+        if left_edge is None or right_edge is None:
+            return [], np.array([]), self.mode
+
+        if len(left_edge) < self.min_measurements or len(right_edge) < self.min_measurements:
+            return [], np.array([]), self.mode
+
+        # Build measurements from left/right edges
+        # Match points by y-coordinate
+        measurements = []
+
+        # Create lookup for right edge by y
+        right_lookup = {}
+        for pt in right_edge:
+            y = int(pt[1])
+            if y not in right_lookup:
+                right_lookup[y] = []
+            right_lookup[y].append(pt[0])
+
+        # Match left edge points with closest right edge points
+        for left_pt in left_edge:
+            left_x, left_y = left_pt[0], int(left_pt[1])
+
+            # Find right point at same or nearby y
+            best_right_x = None
+            for offset in range(self.search_offset):
+                if (left_y + offset) in right_lookup:
+                    best_right_x = min(right_lookup[left_y + offset], key=lambda rx: abs(rx - left_x))
+                    break
+                if (left_y - offset) in right_lookup:
+                    best_right_x = min(right_lookup[left_y - offset], key=lambda rx: abs(rx - left_x))
+                    break
+
+            if best_right_x is not None:
+                center_x = (left_x + best_right_x) / 2.0
+                width = abs(best_right_x - left_x)
+
+                # Sanity check: reasonable width
+                if self.min_width < width < self.max_width:
+                    measurements.append((left_y, center_x, width))
+
+        if len(measurements) < self.min_measurements:
+            return [], np.array([]), self.mode
+
+        # Sort by y (descending - bottom to top)
+        measurements.sort(key=lambda m: -m[0])
+
+        # Extract arrays
+        y_samples = np.array([m[0] for m in measurements], dtype=np.float32)
+        x_samples = np.array([m[1] for m in measurements], dtype=np.float32)
+        w_samples = np.array([m[2] for m in measurements], dtype=np.float32)
+
+        # Normalize y for numerical stability
+        y_norm = self._normalize_y(y_samples)
+
+        # Weighted least squares (trust bottom points more)
+        weights = 1.0 + self.weight_bias * y_norm
+        W = np.diag(weights)
+
+        # Design matrix: [1, y, y^2]
+        X = np.column_stack((np.ones_like(y_norm), y_norm, y_norm**2))
+
+        try:
+            # Solve: (X^T W X)^-1 X^T W x
+            XTW = X.T @ W
+
+            # Current frame coefficients
+            curr_coeffs_center = np.linalg.solve(XTW @ X, XTW @ x_samples)
+
+            if self.fit_width_poly:
+                curr_coeffs_width = np.linalg.solve(XTW @ X, XTW @ w_samples)
+            else:
+                # Use constant width (mean)
+                curr_coeffs_width = np.array([np.mean(w_samples), 0, 0], dtype=np.float32)
+
+            # Apply temporal smoothing (EMA)
+            coeffs_center = self._apply_temporal_smoothing(
+                curr_coeffs_center,
+                self.prev_coeffs_center
+            )
+            coeffs_width = self._apply_temporal_smoothing(
+                curr_coeffs_width,
+                self.prev_coeffs_width
+            )
+
+            # Apply straight-line locking
+            coeffs_center = self._apply_straight_line_locking(coeffs_center)
+
+            # Also apply to width if in straight mode
+            if self.mode == "Straight" and self.reduce_width_in_straight:
+                coeffs_width[2] = coeffs_width[2] * self.reduction_factor
+
+            # Update previous coefficients
+            self.prev_coeffs_center = coeffs_center.copy()
+            self.prev_coeffs_width = coeffs_width.copy()
+
+        except np.linalg.LinAlgError:
+            return [], np.array([]), self.mode
+
+        # Generate smooth curve with dense points
+        y_dense = np.arange(
+            self.end_y,
+            self.start_y + 1,
+            self.output_step,
+            dtype=np.float32
+        )
+        y_dense_norm = self._normalize_y(y_dense)
+
+        # Calculate center: x = a*y^2 + b*y + c
+        center_dense = (
+            coeffs_center[0] +
+            coeffs_center[1] * y_dense_norm +
+            coeffs_center[2] * y_dense_norm**2
+        )
+
+        # Calculate width: w = a_w*y^2 + b_w*y + c_w
+        width_dense = (
+            coeffs_width[0] +
+            coeffs_width[1] * y_dense_norm +
+            coeffs_width[2] * y_dense_norm**2
+        )
+
+        # Clamp width to reasonable range
+        width_dense = np.clip(width_dense, self.clamp_min, self.clamp_max)
+
+        # Create center points list
+        center_points = [(int(x), int(y)) for x, y in zip(center_dense, y_dense)]
+
+        return center_points, width_dense, self.mode

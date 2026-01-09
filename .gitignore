@@ -1,24 +1,29 @@
 # ===========================================
 # RailSafeNet_LiDAR .gitignore
+# Production-ready configuration
 # ===========================================
 
 # -------------------------------------------
-# 1. Datasets & Large Files (MUST NOT BE DELETED)
+# 1. Archive Directory (Development/Training files)
 # -------------------------------------------
-# Video datasets
+.archive/
+
+# -------------------------------------------
+# 2. Large Files & Datasets
+# -------------------------------------------
+# Video files
 assets/crop/
 assets/crop2/
 *.mp4
 *.avi
 *.mov
 
-# Model weights (large binary files)
+# Model weights (binary files)
 assets/models_pretrained/
 *.pth
 *.pt
 *.onnx
 *.engine
-yolov8n.pt
 
 # Dataset directories
 assets/pilsen_railway_dataset/
@@ -30,89 +35,10 @@ railway_dataset/
 assets/calibration_cache/
 
 # -------------------------------------------
-# 2. IDE & Editor Settings
+# 3. Results & Output (Regenerable)
 # -------------------------------------------
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-*.vscode
-
-# -------------------------------------------
-# 3. Python Cache & Build Artifacts
-# -------------------------------------------
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg
-*.egg-info/
-dist/
-build/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-wheels/
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
-
-# -------------------------------------------
-# 4. Virtual Environments
-# -------------------------------------------
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-.python-version
-
-# -------------------------------------------
-# 5. Testing & Coverage
-# -------------------------------------------
-.pytest_cache/
-.coverage
-htmlcov/
-*.cover
-.hypothesis/
-tests/fixtures/generated/
-test_output/
-
-# -------------------------------------------
-# 6. Logs & Temp Files
-# -------------------------------------------
-*.log
-logs/
-geckodriver.log
-pip-log.txt
-pip-delete-this-directory.txt
-result.txt
-
-# -------------------------------------------
-# 7. OS Generated Files
-# -------------------------------------------
-.DS_Store
-Thumbs.db
-
-# -------------------------------------------
-# 8. Jupyter Notebook
-# -------------------------------------------
-.ipynb_checkpoints
-
-# -------------------------------------------
-# 9. W&B (Weights & Biases)
-# -------------------------------------------
-wandb/
-
-# -------------------------------------------
-# 10. Generated Results (rebuild-able)
-# -------------------------------------------
+results/
+output/
 comparison_results/
 evaluation_results/
 enhanced_results/
@@ -122,37 +48,87 @@ video_results/
 optimized_results/
 simple_results/
 class_analysis/
-archive_old_files/
 
 # -------------------------------------------
-# 11. Old Analysis Scripts (not needed)
+# 4. Python Cache & Build
 # -------------------------------------------
-investigate_railsem19_classes.py
-debug_segmentation.py
-analyze_original_model.py
-analyze_rail_classes.py
-run_sweep.sh
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info/
+dist/
+build/
+wheels/
+.mypy_cache/
+.pytest_cache/
 
 # -------------------------------------------
-# 12. Temporary Status Files
+# 5. Virtual Environments
 # -------------------------------------------
-CURRENT_STATUS_SUMMARY.md
-ENHANCED_PERFORMANCE_COMPARISON.md
+.env
+.venv
+env/
+venv/
+ENV/
 
 # -------------------------------------------
-# 13. Other
+# 6. IDE & Editor
 # -------------------------------------------
-other/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # -------------------------------------------
-# IMPORTANT: Keep these files tracked
+# 7. Testing & Coverage
 # -------------------------------------------
-# !README.md
-# !LICENSE.txt
-# !requirements.txt
-# !final_project.md
-# !config/
-# !src/
-# !tests/
-# !scripts/
-# !JetsonRailSafeApp/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+
+# -------------------------------------------
+# 8. Development Tools
+# -------------------------------------------
+# Claude Code
+.claude/
+
+# Specify
+.specify/
+
+# W&B
+wandb/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# -------------------------------------------
+# 9. Logs & Temp Files
+# -------------------------------------------
+*.log
+logs/
+*.tmp
+temp/
+
+# -------------------------------------------
+# 10. OS Files
+# -------------------------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------------------------
+# KEEP TRACKED (Essential Production Files)
+# -------------------------------------------
+# videoAssessor_final.py - Main entry point
+# videoAssessor.py - Base class
+# src/ - Core modules
+# config/ - Configuration files
+# docker/ - Docker deployment
+# scripts/metrics_filtered_cls.py - Required import
+# scripts/run_*.sh - Launch scripts
+# scripts/build_docker.sh - Docker build
+# CLAUDE.md - Project guidelines
+# README.md - Documentation
+# requirements.txt - Dependencies

@@ -506,9 +506,19 @@ def draw_results(frame, borders, classification, names):
     
     return frame
 
+def natural_sort_key(path):
+    """자연스러운 숫자 정렬을 위한 키 함수"""
+    import re
+    basename = os.path.basename(path)
+    # 숫자 부분 추출 (tram123.mp4 -> 123)
+    match = re.search(r'tram(\d+)', basename)
+    if match:
+        return int(match.group(1))
+    return 0
+
 def select_video_file(video_dir):
     """비디오 파일 선택 함수"""
-    video_files = sorted(glob.glob(os.path.join(video_dir, "tram*.mp4")))
+    video_files = sorted(glob.glob(os.path.join(video_dir, "tram*.mp4")), key=natural_sort_key)
     
     if not video_files:
         print(f"No video files found in {video_dir}")
@@ -537,10 +547,13 @@ def select_video_file(video_dir):
 # 메인 함수
 # -------------------------------------------------------------------
 def main():
-    # 경로 설정
-    video_dir = "/home/mmc-server4/RailSafeNet/assets/crop"
-    seg_engine_path = "/home/mmc-server4/RailSafeNet/assets/models_pretrained/segformer/optimized/segformer_b3_transfer_best_0.7961.engine"
-    det_engine_path = "/home/mmc-server4/RailSafeNet/assets/models_pretrained/yolo/yolov8s_896x512.engine"
+    # 경로 설정 - 환경변수 또는 상대경로 사용
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    video_dir = os.environ.get("VIDEO_DIR", os.path.join(script_dir, "assets", "crop"))
+    seg_engine_path = os.environ.get("SEGFORMER_ENGINE",
+        os.path.join(script_dir, "assets/models_pretrained/segformer/optimized/segformer_b3_transfer_best_0.7961.engine"))
+    det_engine_path = os.environ.get("YOLO_ENGINE",
+        os.path.join(script_dir, "assets/models_pretrained/yolo/yolov8s_896x512.engine"))
     
     print("🚀 Video Distance Assessor")
     print("="*50)

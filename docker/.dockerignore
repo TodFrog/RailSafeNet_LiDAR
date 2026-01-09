@@ -1,0 +1,77 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.eggs/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg
+
+# Large files (should be mounted as volumes)
+assets/models_pretrained/
+assets/crop/
+results/
+
+# Documentation
+*.md
+docs/
+
+# Test files
+tests/
+test_*.py
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Specs (development only)
+specs/
+
+# Deprecated files
+.deprecated_files/
+
+# Output files
+output/
+*.mp4
+
+# Claude/AI files
+.claude/

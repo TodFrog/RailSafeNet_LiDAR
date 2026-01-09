@@ -1,0 +1,133 @@
+# RailSafeNet Final - Docker Compose Configuration
+# ================================================
+#
+# Usage:
+#   Build:                    docker-compose build
+#   Video mode (display):     docker-compose up railsafenet-video
+#   Camera mode (fullscreen): docker-compose up railsafenet-camera
+#   BEV calibration:          docker-compose up railsafenet-calibrate
+#   VP calibration:           docker-compose up railsafenet-calibrate-vp
+#   Process & save video:     docker-compose run railsafenet-process
+#
+# For Jetson deployment:
+#   1. Build on Jetson: docker-compose build
+#   2. Run camera mode: docker-compose up railsafenet-camera
+
+version: '3.3'
+
+# Common configuration
+x-common: &common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: railsafenet-final:latest
+  runtime: nvidia
+  privileged: true
+  network_mode: host
+  environment:
+    - DISPLAY=${DISPLAY:-:0}
+    - NVIDIA_VISIBLE_DEVICES=all
+    - NVIDIA_DRIVER_CAPABILITIES=all
+    - VIDEO_DIR=/app/assets/crop
+  volumes:
+    # X11 display
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    # Model files (read-only)
+    - ../assets/models_pretrained:/app/assets/models_pretrained:ro
+
+services:
+  # ============================================
+  # Video mode - for testing with pre-recorded videos
+  # ============================================
+  railsafenet-video:
+    <<: *common
+    container_name: railsafenet-video
+    stdin_open: true
+    tty: true
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../assets/models_pretrained:/app/assets/models_pretrained:ro
+      - ../assets/crop:/app/assets/crop:ro
+      - ../config:/app/config:ro
+      - ../results:/app/results:rw
+    command: ["--mode", "video"]
+
+  # ============================================
+  # Camera mode - for real-time detection (production)
+  # ============================================
+  railsafenet-camera:
+    <<: *common
+    container_name: railsafenet-camera
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../assets/models_pretrained:/app/assets/models_pretrained:ro
+      - ../config:/app/config:ro
+      - ../results:/app/results:rw
+    devices:
+      - /dev/video0:/dev/video0
+    command: ["--mode", "camera", "--fullscreen"]
+
+  # ============================================
+  # BEV Calibration mode
+  # ============================================
+  railsafenet-calibrate:
+    <<: *common
+    container_name: railsafenet-calibrate
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../assets/crop:/app/assets/crop:ro
+      - ../config:/app/config:rw  # Read-write for saving calibration
+    command: ["--calibrate"]
+
+  # ============================================
+  # Vanishing Point Calibration mode
+  # ============================================
+  railsafenet-calibrate-vp:
+    <<: *common
+    container_name: railsafenet-calibrate-vp
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../assets/crop:/app/assets/crop:ro
+      - ../config:/app/config:rw  # Read-write for saving VP
+    command: ["--calibrate-vp"]
+
+  # ============================================
+  # Process & Save mode - headless video processing
+  # Usage: docker-compose run railsafenet-process \
+  #        --video /app/assets/crop/input.mp4 \
+  #        --output /app/output/result.mp4 \
+  #        --start-time 30
+  # ============================================
+  railsafenet-process:
+    <<: *common
+    container_name: railsafenet-process
+    volumes:
+      - ../assets/models_pretrained:/app/assets/models_pretrained:ro
+      - ../assets/crop:/app/assets/crop:ro
+      - ../config:/app/config:ro
+      - ../output:/app/output:rw  # Output directory
+    # Override entrypoint to allow flexible arguments
+    entrypoint: ["python3", "/app/videoAssessor_final.py", "--mode", "video"]
+    # Default: process original.mp4 from 30s
+    command: ["--video", "/app/assets/crop/original.mp4", "--output", "/app/output/result.mp4"]
+
+  # ============================================
+  # Development/Debug mode - interactive shell
+  # Usage: docker-compose run railsafenet-dev bash
+  # ============================================
+  railsafenet-dev:
+    <<: *common
+    container_name: railsafenet-dev
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../assets/models_pretrained:/app/assets/models_pretrained:ro
+      - ../assets/crop:/app/assets/crop:ro
+      - ../config:/app/config:rw
+      - ../output:/app/output:rw
+      - ../src:/app/src:rw  # Source code (for development)
+    devices:
+      - /dev/video0:/dev/video0
+    entrypoint: []
+    command: ["bash"]
+    stdin_open: true
+    tty: true
