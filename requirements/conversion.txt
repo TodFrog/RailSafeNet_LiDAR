@@ -1,0 +1,5 @@
+# ONNX, TensorRT, 가속 변환용 의존성
+-r base.txt
+onnxruntime-gpu
+tensorrt
+pycuda

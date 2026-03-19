@@ -1,0 +1,9 @@
+name: railsafenet-delivery
+channels:
+  - defaults
+dependencies:
+  # ASSUMPTION: 현재 작업 환경에서 확인한 Python 3.13을 기준값으로 둔다.
+  - python=3.13
+  - pip
+  - pip:
+      - -r requirements.txt

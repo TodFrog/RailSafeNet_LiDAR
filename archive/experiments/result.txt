@@ -1,0 +1,101 @@
+================================================================================
+RailSafeNet SegFormer B3 Training Session Results
+Date: 2025-09-12
+Environment: rail conda env, GPU 2 (NVIDIA TITAN RTX 25.2GB)
+================================================================================
+
+## 🎯 MAIN ACHIEVEMENT
+✅ SegFormer B3 achieved TARGET RAIL IoU ≥ 0.6 (achieved 0.6099 in epoch 2)
+
+## 📊 EXPERIMENTAL RESULTS
+
+### 1. SegFormer B3 Test (Conservative)
+- Script: train_SegFormer_B3_test.py
+- Config: 8 epochs, batch_size=1, lr=5e-5, image_size=512
+- Result: Rail IoU 0.2882
+- Status: ✅ Stability validated
+
+### 2. SegFormer B3 Improved (🏆 BREAKTHROUGH)
+- Script: train_SegFormer_B3_improved.py  
+- Config: 15 epochs, batch_size=2, lr=8e-5, image_size=512, cosine_warm scheduler
+- Result: ⭐ Rail IoU 0.6099 (epoch 2) - TARGET EXCEEDED
+- Status: ✅ Early stopped - target achieved
+- GPU: CUDA_VISIBLE_DEVICES=2
+
+### 3. SegFormer B3 Batch Size 4 Test
+- Script: train_SegFormer_B3_batch4.py
+- Config: 12 epochs, batch_size=4, lr=1e-4, image_size=384  
+- Status: 🔄 In progress (GPU 0)
+
+### 4. SegFormer B0 Enhanced (Baseline)
+- Script: train_SegFormer_B0_enhanced.py
+- Config: 20 epochs, batch_size=4, lr=1.5e-4, image_size=512
+- Target: Baseline comparison vs B3
+- Status: 🔄 In progress (GPU 3)
+
+## 🧠 OPTIMAL CONFIGURATION (Based on successful B3)
+```python
+config = {
+    'epochs': 15,
+    'learning_rate': 8e-5,
+    'batch_size': 2, 
+    'image_size': 512,
+    'scheduler': 'cosine_warm',
+    'weight_decay': 0.01,
+    'device': 'cuda:0'  # when using CUDA_VISIBLE_DEVICES=2
+}
+```
+
+## 🔄 HYPERPARAMETER SWEEP SETUP
+### Manual Sweep Configuration:
+- Learning rates: [0.00005, 0.00007, 0.00008, 0.00009, 0.0001]
+- Schedulers: ['cosine_warm', 'cosine', 'onecycle']  
+- Batch sizes: [2, 4]
+- Total combinations: 30
+- Epochs per run: 30 with early stopping at rail IoU ≥ 0.6
+- Auto-continuation: ✅ Moves to next combination when finished
+
+### WandB Integration:
+- Project: "RailSafeNet-SegFormer-B3-Sweep" 
+- Sweep ID: vuy5bx2a
+- Manual sweep script: train_SegFormer_B3_manual_sweep.py
+
+## 🗂️ FILES CREATED
+1. train_SegFormer_B3_test.py - Conservative stability test
+2. train_SegFormer_B3_improved.py - 🏆 Successful configuration  
+3. train_SegFormer_B3_batch4.py - Aggressive batching test
+4. train_SegFormer_B0_enhanced.py - Baseline comparison
+5. train_SegFormer_B3_sweep.py - WandB sweep training script
+6. train_SegFormer_B3_manual_sweep.py - Manual hyperparameter optimization
+7. create_sweep.py - WandB sweep configuration generator
+8. run_sweep.sh - Bash script for running sweep agent
+
+## 📈 MODEL PERFORMANCE
+- RailSem19 Dataset: 19 classes (0-18 sequential)
+- Target Rail Classes: [3, 12, 17, 18] (tram-track, rail-track, rail-raised, rail-embedded)
+- Best Rail IoU: 0.6099 ✅ (Target: ≥0.6)
+- Model: SegFormer B3 (47.2M parameters)
+- Pretrained: nvidia/segformer-b3-finetuned-cityscapes-1024-1024
+
+## 🎯 NEXT STEPS
+1. ✅ Hyperparameter sweep launched (30 combinations)
+2. ⏳ Monitor sweep results for optimal configuration
+3. ⏳ Prepare best model for Phase 2 (LiDAR integration)
+4. ⏳ AGX Orin deployment testing
+
+## 🛠️ ENVIRONMENT DETAILS  
+- Conda env: rail (not base)
+- GPU: NVIDIA TITAN RTX (25.2GB VRAM)
+- CUDA_VISIBLE_DEVICES=2 for main training
+- Python packages: transformers, torch, wandb, albumentations, cv2
+
+## 📝 NOTES
+- Fine-tuning approach: Full model training (encoder not frozen)
+- Data augmentation: Horizontal flip, color jitter, normalization
+- Early stopping: Rail IoU ≥ 0.6 achieved in epoch 2
+- Memory management: Batch clearing every 30 steps
+- Gradient clipping: max_norm=1.0
+
+================================================================================
+Session Status: TERMINATED BY USER - Target achieved, sweep interrupted
+================================================================================

@@ -1,0 +1,13 @@
+# 공통 파이썬 의존성
+torch
+torchvision
+transformers
+numpy
+opencv-python
+matplotlib
+scikit-learn
+albumentations
+scipy
+pandas
+scikit-image
+tqdm

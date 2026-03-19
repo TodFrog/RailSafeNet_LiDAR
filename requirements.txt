@@ -1,0 +1,2 @@
+# 공식 PyTorch 재현 실행용 설치 진입점
+-r requirements/inference.txt

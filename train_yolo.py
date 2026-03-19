@@ -1,8 +1,6 @@
-import os
-import ultralytics
-ultralytics.checks()
-import comet_ml; comet_ml.init()
+"""루트 실행 호환성을 위한 YOLO 학습 wrapper."""
 
-logger = 'Comet' #@param ['Comet', 'TensorBoard']
+from _root_wrapper import expose_or_run
 
-os.system('yolo train model=yolov8s.pt data=scripts/pilsen.yaml epochs=50 imgsz=640')
+expose_or_run("src.training.train_yolo", globals(), __name__)
+

@@ -1,0 +1,8 @@
+# 학습, 평가, 시각화 확장 의존성
+-r base.txt
+wandb
+comet_ml
+torchsummary
+ultralytics
+ultralyticsplus
+seaborn

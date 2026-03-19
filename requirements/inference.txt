@@ -1,0 +1,2 @@
+# 공식 PyTorch 재현 실행용 최소 의존성
+-r base.txt
