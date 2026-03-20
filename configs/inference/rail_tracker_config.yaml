@@ -1,0 +1,80 @@
+advanced:
+  fit_width_polynomial: true
+  polynomial_degree: 2
+  reduce_width_curvature_in_straight: true
+  y_normalization_range:
+  - -1.0
+  - 1.0
+edge_selection:
+  search_offset_range: 3
+hazard_zones:
+  orange_color:
+  - 0
+  - 165
+  - 255
+  orange_zone_width_px: 150
+  perspective_taper: 0.8
+  red_color:
+  - 0
+  - 0
+  - 255
+  red_zone_width_px: 100
+  vanishing_point:
+    x: 910
+    y: 528
+  yellow_color:
+  - 0
+  - 255
+  - 255
+  yellow_zone_width_px: 200
+  zone_alpha: 0.3
+logging:
+  debug_measurement_count: false
+  debug_polynomial_coeffs: false
+  log_mode_every_n_frames: 30
+  log_statistics: true
+performance:
+  detection_cache_interval: 1
+  output_step_px: 1
+  segmentation_cache_interval: 3
+polynomial_fitting:
+  min_measurements: 10
+  weight_bias: 0.5
+straight_line_locking:
+  curvature_threshold: 15.0
+  reduction_factor: 0.1
+temporal_smoothing:
+  alpha: 0.25
+tracking_region:
+  bottom_offset_px: 20
+  scan_step_px: 1
+  top_percentage: 0.55
+visualization:
+  center_line_color:
+    B: 255
+    G: 255
+    R: 0
+  center_line_thickness: 3
+  color_curved:
+    B: 0
+    G: 165
+    R: 255
+  color_straight:
+    B: 0
+    G: 255
+    R: 0
+  edge_line_color:
+    B: 255
+    G: 255
+    R: 255
+  edge_line_thickness: 2
+  rail_zone_alpha: 0.3
+  rail_zone_color:
+    B: 0
+    G: 255
+    R: 0
+width_constraints:
+  clamp_max_px: 350
+  clamp_min_px: 60
+  max_width_px: 400
+  min_width_px: 50

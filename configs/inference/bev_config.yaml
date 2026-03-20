@@ -1,0 +1,18 @@
+bev_transform:
+  interpolation: linear
+  output_size:
+    height: 600
+    width: 800
+  source_points:
+    bottom_left:
+    - 0
+    - 1079
+    bottom_right:
+    - 1919
+    - 1079
+    top_left:
+    - 182
+    - 634
+    top_right:
+    - 1728
+    - 634

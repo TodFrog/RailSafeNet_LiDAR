@@ -1,19 +1,47 @@
-"""Ultralytics YOLO CLI를 호출하는 얇은 학습 진입 스크립트.
+#!/usr/bin/env python3
+"""최종 유지용 YOLO 학습 진입 스크립트.
 
-이 스크립트는 복잡한 파이프라인을 직접 구현하지 않고, 최종 제출 시 어떤 데이터
-설정 파일과 기본 모델을 사용했는지 명확히 남기기 위한 실행 기록용 엔트리포인트다.
-실제 학습 파라미터는 현재 코드에 하드코딩되어 있으므로, 재사용 전 검토가 필요하다.
+이 스크립트는 현재 저장소에서 active 상태로 유지하는 두 개의 학습 엔트리 중 YOLO 담당
+파일이다. 복잡한 학습 파이프라인을 다시 구현하지 않고, 최종 제출 시점에 어떤 데이터 설정과
+기본 모델을 사용해 학습을 시작하는지 명확하게 남기는 역할에 집중한다.
+
+주의:
+- 실제 학습은 `ultralytics` CLI에 위임한다.
+- `comet_ml` 초기화 여부와 학습 epoch 등은 현재 코드의 기존 가정을 그대로 유지한다.
+- 데이터 설정 파일은 `configs/training/pilsen.yaml`을 canonical 경로로 사용한다.
 """
 
+from __future__ import annotations
+
 import os
-import ultralytics
+
 from src.common.repo_paths import repo_path
 
-ultralytics.checks()
-import comet_ml; comet_ml.init()
+os.environ.setdefault("YOLO_CONFIG_DIR", str(repo_path(".ultralytics")))
 
-logger = 'Comet' #@param ['Comet', 'TensorBoard']
+import ultralytics
+import comet_ml
 
-# 재구성 이후 데이터 설정은 저장소 내부 configs 경로를 우선 사용한다.
-data_config = repo_path("configs", "training", "pilsen.yaml")
-os.system(f'yolo train model=yolov8s.pt data=\"{data_config}\" epochs=50 imgsz=640')
+
+DATA_CONFIG = repo_path("configs", "training", "pilsen.yaml")
+DEFAULT_MODEL = "yolov8s.pt"
+DEFAULT_EPOCHS = 50
+DEFAULT_IMAGE_SIZE = 640
+
+
+def main() -> int:
+    """Ultralytics YOLO 학습 CLI를 호출한다."""
+    ultralytics.checks()
+    comet_ml.init()
+
+    command = (
+        f'yolo train model={DEFAULT_MODEL} '
+        f'data="{DATA_CONFIG}" '
+        f"epochs={DEFAULT_EPOCHS} "
+        f"imgsz={DEFAULT_IMAGE_SIZE}"
+    )
+    return os.system(command)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

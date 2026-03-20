@@ -1,33 +1,28 @@
-# RailSafeNet 설정 및 실행 안내
+# videoAssessor 설정 및 실행 안내
 
 ## 1. 지원 환경
 
-### 1.1 문서상 우선 대상 환경
+### 1.1 목표 실행 환경
 
 - 운영체제: `Linux`
 - GPU: `NVIDIA` 계열 GPU
-- 문서상 우선 제출 환경: `Linux + Nvidia Orin NX`
+- 우선 대상: `Linux + Nvidia Orin NX`
 
-### 1.2 현재 저장소 정리/검토 workspace
+### 1.2 현재 문서 검증 workspace
 
 - 운영체제: `Windows`
-- 용도: 문서 보완, 모델 파일 정리, 기본 smoke path 점검
+- 목적: 저장소 정리, 모델 경로 점검, CLI 및 preflight 검증
 
-`ASSUMPTION`: 현재 Windows workspace는 원래 학습/변환이 수행된 런타임 환경과 다르며, 포함된 ONNX/TensorRT 산출물도 별도 Linux 환경에서 가져온 파일입니다.
-
-### 1.3 TensorRT 엔진 관련 주의
-
-- `models/final/segformer_b3_original_13class.engine`는 Linux 환경에서 가져온 TensorRT 엔진입니다.
-- 사용자 제공 정보 기준으로 이 엔진은 `Titan RTX` 기준으로 최적화되었습니다.
-- 따라서 현재 Windows workspace나 다른 GPU에서 그대로 재사용하는 것을 기본 전제로 두면 안 됩니다.
-- `TODO`: 실제 최종 배포 장비가 `Orin NX`인지, 다른 Linux GPU 서버인지 확인한 뒤 대상 장비에서 엔진 재생성 또는 재검증이 필요합니다.
+`ASSUMPTION`: 현재 Windows workspace는 원래 학습/최적화 환경과 다르다. 따라서 TensorRT와 CUDA,
+학습용 dependency, 실제 카메라/비디오 입출력은 Linux runtime에서 다시 검증해야 한다.
 
 ## 2. Python 버전
 
-- 저장소 기준 환경 파일: `environment.yml`
-- 명시 값: `python=3.13`
+- 기준 파일: `environment.yml`
+- 현재 기준값: `python=3.13`
 
-`ASSUMPTION`: `3.13`은 현재 저장소 기준 환경 값입니다. TensorRT/CUDA 조합이 필요한 실제 배포 환경에서는 별도 호환성 검토가 필요합니다.
+`ASSUMPTION`: 이 값은 현재 저장소 기준 환경 설정값이다. TensorRT/CUDA와의 실제 호환 버전은
+최종 배포 장비 기준으로 다시 확인해야 한다.
 
 ## 3. 의존성 설치
 
@@ -58,170 +53,188 @@ conda env create -f environment.yml
 conda activate railsafenet-delivery
 ```
 
-### 3.3 추가 프로파일
-
-- 학습 확장 패키지: `requirements/training.txt`
-- 변환/TensorRT 관련 패키지: `requirements/conversion.txt`
-
-예시:
+### 3.3 training 전용 확장
 
 ```bash
 python -m pip install -r requirements/training.txt
-python -m pip install -r requirements/conversion.txt
 ```
 
 ## 4. 모델 준비
 
-### 4.1 현재 저장소에 실제 포함된 주요 파일
+### 4.1 현재 저장소에 포함된 모델
 
-- `models/converted/SegFormer_B3_1024_finetuned.pth`
-- `models/converted/segformer_b3_original_13class.onnx`
 - `models/final/segformer_b3_original_13class.engine`
+- `models/converted/segformer_b3_original_13class.onnx`
+- `models/converted/SegFormer_B3_1024_finetuned.pth`
 - `models/final/yolov8n.pt`
 
-### 4.2 포인터 파일
+### 4.2 backend별 기본 사용 모델
 
-- `models/references/segformer/SegFormer_B3_1024_finetuned.pth.txt`
-- `models/references/yolo/yolov8s.pt.txt`
+| backend | 기본 모델 | 비고 |
+|---|---|---|
+| `engine` | `models/final/segformer_b3_original_13class.engine` | SegFormer canonical runtime |
+| `engine` | `models/final/yolov8n.engine` 또는 `models/final/yolov8s.engine` 우선, 없으면 `models/final/yolov8n.pt` fallback | 현재 repo에는 `.pt` fallback만 존재 |
+| `onnx` | `models/converted/segformer_b3_original_13class.onnx` | SegFormer ONNX 존재 |
+| `pytorch` | `models/converted/SegFormer_B3_1024_finetuned.pth` | PyTorch SegFormer 체크포인트 존재 |
 
-### 4.3 공식 PyTorch 경로의 모델 탐색 순서
+### 4.3 중요한 제약
 
-공식 스크립트 `production_segformer_pytorch.py`는 아래 순서로 SegFormer `.pth`를 찾습니다.
+- `models/final/segformer_b3_original_13class.engine`는 Linux + Titan RTX 기준 산출물이다.
+- Jetson 또는 다른 GPU에서 바로 사용 가능하다고 보장하지 않는다.
+- `onnx` backend는 active YOLO `.onnx`가 없어 현재 preflight 수준으로만 유지한다.
 
-1. `--model-path`로 지정한 경로
-2. `models/final/segformer_b3_production_optimized_rail_0.7500.pth`
-3. `models/final/SegFormer_B3_1024_finetuned.pth`
-4. `models/converted/SegFormer_B3_1024_finetuned.pth`
-5. 기존 Linux 운영 환경 fallback 경로
+## 5. 설정 파일
 
-즉, 현재 저장소만 기준으로도 `models/converted/SegFormer_B3_1024_finetuned.pth`를 공식 smoke path 후보로 사용할 수 있습니다.
+기본 설정 경로:
 
-### 4.4 포함된 아티팩트의 해석
+- 선로 추적 설정: `configs/inference/rail_tracker_config.yaml`
+- BEV 설정: `configs/inference/bev_config.yaml`
 
-- `SegFormer_B3_1024_finetuned.pth`
-  - PyTorch 기반 SegFormer 체크포인트
-  - 공식 PyTorch smoke path에서 직접 사용할 수 있는 후보
-- `segformer_b3_original_13class.onnx`
-  - ONNX 기반 추론 또는 TensorRT 변환의 입력 아티팩트
-- `segformer_b3_original_13class.engine`
-  - TensorRT 엔진
-  - Linux + Titan RTX 환경에서 가져온 파일
-  - 현재 Windows workspace나 다른 GPU에서 그대로 동작한다고 보장할 수 없음
-- `yolov8n.pt`
-  - 저장소에 실제 포함된 YOLO 바이너리
-  - 다만 통합 파이프라인 코드는 여전히 `yolov8s` 외부 자산을 참조하는 부분이 있음
+필요 시 CLI에서 override할 수 있다.
 
-## 5. 메인 실행 방법
+## 6. 실행 준비 점검
 
-### 5.1 도움말 확인
+### 6.1 도움말 확인
 
 ```bash
-python production_segformer_pytorch.py --help
+python videoAssessor.py --help
 ```
 
-### 5.2 사전 점검
-
-설치 직후에는 먼저 아래 명령으로 준비 상태를 확인합니다.
+### 6.2 engine backend preflight
 
 ```bash
-python production_segformer_pytorch.py --check-only
+python videoAssessor.py --backend engine --check-only
 ```
 
-사전 점검 항목:
+이 명령은 아래를 점검한다.
 
-- `torch`, `transformers` 의존성 존재 여부
-- SegFormer `.pth` 후보 경로 존재 여부
-- 현재 workspace 기준 실행 준비 상태
+- `cv2`, `numpy`, `yaml`, `torch`, `albumentations`
+- `tensorrt`, `pycuda`
+- `ultralytics`
+- SegFormer engine 경로
+- YOLO engine 또는 `.pt` fallback 경로
 
-종료 코드:
-
-- `0`: 의존성과 모델 후보가 모두 충족됨
-- `1`: 의존성 누락 또는 모델 부재
-
-### 5.3 공식 PyTorch smoke path 실행
-
-Linux 예시:
+### 6.3 onnx backend preflight
 
 ```bash
-python production_segformer_pytorch.py --model-path models/converted/SegFormer_B3_1024_finetuned.pth --device cuda
+python videoAssessor.py --backend onnx --check-only
 ```
 
-Windows PowerShell 예시:
+점검 대상:
 
-```powershell
-python production_segformer_pytorch.py --model-path "models\converted\SegFormer_B3_1024_finetuned.pth" --device cpu
-```
+- `onnxruntime`
+- SegFormer `.onnx`
+- YOLO `.onnx` 존재 여부
 
-`--model-path`를 생략하면 저장소 내부 기본 후보와 외부 fallback을 순서대로 탐색합니다.
-
-## 6. 자주 발생하는 오류와 대응 방법
-
-### 6.1 `transformers` 또는 `torch`가 없다고 표시되는 경우
-
-원인:
-
-- 현재 workspace에 런타임 의존성이 설치되지 않음
-- 문서 검토용 Windows 환경이라 의도적으로 설치하지 않았을 가능성
-
-확인:
+### 6.4 pytorch backend preflight
 
 ```bash
-python production_segformer_pytorch.py --check-only
+python videoAssessor.py --backend pytorch --check-only
 ```
+
+점검 대상:
+
+- `torch`
+- `transformers`
+- `ultralytics`
+- SegFormer `.pth`
+- YOLO `.pt`
+
+## 7. 실제 실행 예시
+
+### 7.1 비디오 파일 실행
+
+```bash
+python videoAssessor.py --backend engine --mode video --video <video_path>
+```
+
+### 7.2 카메라 실행
+
+```bash
+python videoAssessor.py --backend engine --mode camera --camera 0
+```
+
+### 7.3 전체 화면
+
+```bash
+python videoAssessor.py --backend engine --mode video --video <video_path> --fullscreen
+```
+
+### 7.4 결과 비디오 저장
+
+```bash
+python videoAssessor.py --backend engine --mode video --video <video_path> --output output.mp4
+```
+
+### 7.5 calibration
+
+```bash
+python videoAssessor.py --backend engine --mode video --video <video_path> --calibrate
+python videoAssessor.py --backend engine --mode video --video <video_path> --calibrate-vp
+```
+
+## 8. 학습 엔트리
+
+현재 active training 엔트리는 아래 두 개만 유지한다.
+
+- `src/training/train_segformer.py`
+- `src/training/train_yolo.py`
+
+과거 학습 실험, DeepLabv3, sweep 스크립트는 `archive/`로 이동했다.
+
+## 9. 자주 발생하는 오류와 대응 방법
+
+### 9.1 `albumentations`, `tensorrt`, `pycuda` 누락
+
+증상:
+
+- `python videoAssessor.py --backend engine --check-only` 결과에서 `MISSING`
+- 실제 `engine` runtime 실행 시 import 오류 또는 초기화 실패
 
 대응:
 
-```bash
-python -m pip install -r requirements.txt
-```
+- Linux GPU runtime에서 `requirements.txt` 및 TensorRT/CUDA 조합을 다시 설치
+- 현재 Windows workspace에서는 preflight 결과만 확인하는 것이 정상일 수 있음
 
-주의:
+### 9.2 `transformers` 누락
 
-- 현재 Windows workspace에서 `transformers: MISSING`이 나오는 것은 “이 workspace가 원래 학습/실행 환경이 아님”을 반영할 수 있습니다.
-- 실제 runtime 검증은 Linux CUDA 환경에서 다시 수행하는 것이 안전합니다.
+증상:
 
-### 6.2 `사용 가능한 SegFormer .pth 모델을 찾지 못했습니다.`가 표시되는 경우
-
-원인:
-
-- `.pth` 파일이 후보 경로에 없음
-- `--model-path`가 잘못 지정됨
+- `python videoAssessor.py --backend pytorch --check-only` 결과에서 `MISSING`
 
 대응:
 
-- `models/converted/SegFormer_B3_1024_finetuned.pth` 존재 여부 확인
-- 필요 시 `--model-path`로 명시적 지정
+- PyTorch backend 재현이 필요하면 `transformers` 설치
+- 현재 제출 구조에서는 `pytorch` backend를 보조 점검 경로로 간주
 
-### 6.3 TensorRT 엔진이 동작하지 않는 경우
+### 9.3 YOLO `.onnx` 부재
 
-원인:
+증상:
 
-- 현재 포함된 `.engine` 파일이 Linux + Titan RTX 환경 기준 산출물임
-- GPU, TensorRT, CUDA, 드라이버 조합이 다를 수 있음
-
-대응:
-
-- 현재 `.engine`를 범용 파일로 가정하지 않음
-- 대상 배포 GPU에서 `.onnx` 기준으로 다시 `.engine`을 생성
-- `onnx_to_engine.py` 실행 전 대상 장비의 TensorRT/CUDA 조합 확인
-
-### 6.4 `torch.load` 또는 체크포인트 로드 오류
-
-원인:
-
-- 모델 생성 환경과 현재 PyTorch 환경 차이
-- 전체 모델 객체 저장 방식과 state dict 저장 방식 차이
+- `python videoAssessor.py --backend onnx --check-only` 결과에서 YOLO `.onnx`가 `MISSING`
 
 대응:
 
-- 모델 생성 환경과 유사한 PyTorch 환경 사용
-- `--check-only`로 먼저 경로 존재만 확인한 뒤 실제 로드는 Linux runtime에서 수행
+- 현재 저장소 기준 `onnx` backend는 SegFormer `.onnx`만 확보된 상태다.
+- 최종 ONNX runtime을 활성화하려면 YOLO ONNX 산출물을 별도로 정리해야 한다.
 
-## 7. 알려진 제한사항
+### 9.4 TensorRT engine 호환성 문제
 
-- 공식 기본 경로는 전체 위험도 분석 파이프라인이 아니라 PyTorch smoke path입니다.
-- 현재 Windows workspace는 문서/검토 환경으로 사용 중이며, 원래 학습 및 최적화가 수행된 Linux 환경과 다릅니다.
-- 포함된 TensorRT 엔진은 Titan RTX 기준 산출물이므로 대상 장비가 다르면 재생성이 필요할 수 있습니다.
-- `models/converted/segformer_b3_original_13class.onnx`와 `models/final/segformer_b3_original_13class.engine`는 실제 파일이 존재하지만, 현재 Windows workspace에서 재검증된 결과는 아닙니다.
-- 통합 추론 코드에는 여전히 `yolov8s` 외부 참조가 남아 있습니다.
-- `TODO`: 최종 배포 대상 장비 기준 TensorRT 엔진 재생성 여부와 대표 YOLO 모델 계열을 확정해야 합니다.
+증상:
+
+- engine 파일이 있어도 대상 장비에서 로드 실패 가능
+
+원인:
+
+- 현재 포함된 engine은 Titan RTX/Linux 기준 산출물
+
+대응:
+
+- 최종 배포 장비에서 `.onnx` 기준으로 engine 재생성 또는 재검증 수행
+
+## 10. 알려진 제한사항
+
+- 현재 canonical runtime은 `engine` backend 하나다.
+- `onnx`와 `pytorch`는 현재 전체 video pipeline이 아니라 preflight 중심 보조 경로다.
+- Windows workspace는 검토/정리 환경이며, 실제 배포 환경과 동일하지 않다.
+- `archive/`에는 평가/변환/과거 runtime과 과정 문서가 남아 있으나 active 사용 경로가 아니다.
